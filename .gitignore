@@ -8,3 +8,4 @@ __pycache__/
 *.txt
 *.png
 stitch_fsoc_tracking_simulator
+*.html
