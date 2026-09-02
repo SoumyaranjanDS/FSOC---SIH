@@ -4,6 +4,7 @@ import random
 import json
 import sys
 
+
 def main():
     FPS = 30
     dt = 1.0 / FPS
@@ -53,31 +54,27 @@ def main():
 
         # Generate Telemetry Packet
         packet = {
-            "world": {
-                "trueX": trueX,
-                "trueY": trueY,
-                "fovX": lagX,
-                "fovY": lagY
-            },
+            "world": {"trueX": trueX, "trueY": trueY, "fovX": lagX, "fovY": lagY},
             "camera": {
                 "camX": camX,
                 "camY": camY,
                 "trackerX": trackerX,
                 "trackerY": trackerY,
-                "predictions": pred_points
+                "predictions": pred_points,
             },
             "metrics": {
                 "rmse": round(rmse, 2),
                 "pan": round(lagX - 50.0, 1),
                 "tilt": round(lagY - 50.0, 1),
-                "highError": rmse > 15.0
-            }
+                "highError": rmse > 15.0,
+            },
         }
 
         # Print JSON to stdout for Node.js to consume
         print(json.dumps(packet))
 
         time.sleep(dt)
+
 
 if __name__ == "__main__":
     try:
