@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FSOC Coarse Alignment System - Benchmark</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-variant": "#dce2f3",
+                        "on-primary-container": "#fafdff",
+                        "primary-container": "#007f9d",
+                        "surface-dim": "#d3daea",
+                        "outline": "#6e797e",
+                        "surface-tint": "#006780",
+                        "on-tertiary-fixed-variant": "#454748",
+                        "inverse-primary": "#6cd3f7",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-background": "#151c27",
+                        "error": "#ba1a1a",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#545f73",
+                        "surface-container-high": "#e2e8f8",
+                        "secondary-fixed": "#d8e3fb",
+                        "primary-fixed-dim": "#6cd3f7",
+                        "on-primary-fixed": "#001f28",
+                        "on-tertiary-fixed": "#191c1d",
+                        "secondary-container": "#d5e0f8",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#c5c7c8",
+                        "background": "#f9f9ff",
+                        "on-primary-fixed-variant": "#004e61",
+                        "on-tertiary-container": "#fcfdfe",
+                        "on-secondary-fixed": "#111c2d",
+                        "tertiary-fixed": "#e1e3e4",
+                        "surface-container-highest": "#dce2f3",
+                        "outline-variant": "#bdc8ce",
+                        "on-surface-variant": "#3e484d",
+                        "inverse-surface": "#2a313d",
+                        "error-container": "#ffdad6",
+                        "primary": "#00647c",
+                        "on-tertiary": "#ffffff",
+                        "surface-container": "#e7eefe",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#ebf1ff",
+                        "primary-fixed": "#b7eaff",
+                        "tertiary": "#5a5c5d",
+                        "on-secondary-container": "#586377",
+                        "on-surface": "#151c27",
+                        "on-secondary": "#ffffff",
+                        "surface": "#f9f9ff",
+                        "tertiary-container": "#737576",
+                        "surface-bright": "#f9f9ff",
+                        "on-primary": "#ffffff",
+                        "surface-container-low": "#f0f3ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "unit": "4px",
+                        "xl": "32px",
+                        "panel-padding": "12px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "body-base": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "data-mono": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-base": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "data-mono": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .grid-bg {
+            background-image: 
+                linear-gradient(to right, rgba(189, 200, 206, 0.2) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(189, 200, 206, 0.2) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+    </style>
+</head>
+<body class="bg-background h-screen w-full flex overflow-hidden font-body-base text-on-background">
+<!-- SideNavBar (Shared Component) -->
+<nav class="bg-surface dark:bg-surface-container-low docked left-0 h-full w-[280px] border-r border-outline-variant dark:border-outline flat no shadows flex flex-col py-md px-sm shrink-0 z-10">
+<!-- Header -->
+<div class="px-sm pb-md mb-sm border-b border-outline-variant flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-primary-container text-sm">rocket_launch</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-surface dark:text-on-surface-variant leading-tight">Alignment Engine</h1>
+<p class="font-label-caps text-label-caps text-secondary">v4.2.0-stable</p>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<ul class="flex flex-col gap-xs flex-1 mt-sm">
+<!-- Active Tab: Dashboard -->
+<li class="bg-secondary-container dark:bg-on-secondary-fixed-variant text-on-secondary-container dark:text-secondary-fixed rounded-lg cursor-pointer select-none px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span class="font-label-caps text-label-caps">Dashboard</span>
+</li>
+<li class="text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all cursor-pointer select-none rounded-lg px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">videocam</span>
+<span class="font-label-caps text-label-caps">Camera Feed</span>
+</li>
+<li class="text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all cursor-pointer select-none rounded-lg px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">grid_4x4</span>
+<span class="font-label-caps text-label-caps">World Grid</span>
+</li>
+<li class="text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all cursor-pointer select-none rounded-lg px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+<span class="font-label-caps text-label-caps">Control Panel</span>
+</li>
+<li class="text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all cursor-pointer select-none rounded-lg px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+<span class="font-label-caps text-label-caps">Telemetry</span>
+</li>
+</ul>
+<!-- Footer / CTA -->
+<div class="mt-auto flex flex-col gap-sm pt-md border-t border-outline-variant">
+<ul class="flex flex-col gap-xs mb-sm">
+<li class="text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all cursor-pointer select-none rounded-lg px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">list_alt</span>
+<span class="font-label-caps text-label-caps">Logs</span>
+</li>
+<li class="text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all cursor-pointer select-none rounded-lg px-sm py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+<span class="font-label-caps text-label-caps">Terminal</span>
+</li>
+</ul>
+<button class="w-full h-8 flex items-center justify-center gap-xs rounded border border-error text-error hover:bg-error-container transition-colors cursor-pointer select-none">
+<span class="material-symbols-outlined text-[16px]">power_settings_new</span>
+<span class="font-label-caps text-label-caps">Force Reset</span>
+</button>
+</div>
+</nav>
+<!-- Main Workspace -->
+<div class="flex-1 flex flex-col min-w-0">
+<!-- TopNavBar (Shared Component) -->
+<header class="bg-surface dark:bg-surface-container-low font-body-base text-body-base docked full-width top-0 border-b border-outline-variant dark:border-outline flat no shadows flex justify-between items-center w-full px-gutter h-10 shrink-0 z-10">
+<div class="flex items-center gap-md">
+<div class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-primary-fixed">FSOC Coarse Alignment System</div>
+<div class="flex items-center gap-xs px-2 py-0.5 rounded-full bg-surface-container-high border border-outline-variant ml-sm">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">Benchmark Active</span>
+</div>
+</div>
+<!-- Navigation Links -->
+<nav class="flex h-full items-center gap-lg">
+<a class="text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70 h-full flex items-center font-label-caps text-label-caps">Simulation</a>
+<!-- Active Tab: Benchmark -->
+<a class="text-primary dark:text-primary-fixed border-b-2 border-primary dark:border-primary-fixed pb-1 cursor-pointer active:opacity-70 h-full flex items-center font-label-caps text-label-caps">Benchmark</a>
+<a class="text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70 h-full flex items-center font-label-caps text-label-caps">Analytics</a>
+<a class="text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70 h-full flex items-center font-label-caps text-label-caps">Settings</a>
+</nav>
+<!-- Trailing Icons -->
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70 text-[20px]">settings_input_component</span>
+<span class="material-symbols-outlined text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70 text-[20px]">monitor_heart</span>
+<span class="material-symbols-outlined text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70 text-[20px]">lock_open</span>
+</div>
+</header>
+<!-- Content Canvas (Holy Grail Internal Layout) -->
+<main class="flex-1 overflow-hidden p-md flex gap-gutter bg-background">
+<!-- Left Stage: Visualizations -->
+<div class="flex-1 flex flex-col gap-gutter min-w-0">
+<div class="flex-1 flex gap-gutter min-h-0">
+<!-- Virtual World Panel -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded shadow-sm overflow-hidden">
+<div class="h-8 bg-surface-bright border-b border-outline-variant flex items-center px-sm gap-sm shrink-0">
+<span class="material-symbols-outlined text-[16px] text-secondary">360</span>
+<h2 class="font-label-caps text-label-caps text-on-surface">Virtual World</h2>
+</div>
+<div class="flex-1 relative bg-surface-container-low grid-bg flex items-center justify-center overflow-hidden">
+<!-- Placeholder 3D Origin Marker -->
+<div class="absolute w-full h-[1px] bg-outline-variant opacity-50"></div>
+<div class="absolute h-full w-[1px] bg-outline-variant opacity-50"></div>
+<div class="relative w-4 h-4 rounded-full border-2 border-primary bg-primary-fixed flex items-center justify-center shadow-[0_0_10px_rgba(0,100,124,0.3)]">
+<div class="w-1 h-1 rounded-full bg-primary"></div>
+</div>
+<div class="absolute bottom-sm left-sm font-data-mono text-data-mono text-secondary">
+                                GRID: 10m / unit
+                            </div>
+</div>
+</div>
+<!-- Virtual Camera Feed Panel -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded shadow-sm overflow-hidden">
+<div class="h-8 bg-surface-bright border-b border-outline-variant flex justify-between items-center px-sm shrink-0">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-[16px] text-secondary">videocam</span>
+<h2 class="font-label-caps text-label-caps text-on-surface">Virtual Camera Feed</h2>
+</div>
+<div class="font-data-mono text-data-mono text-secondary flex items-center gap-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span>
+                                REC
+                            </div>
+</div>
+<!-- Video Player Interface -->
+<div class="flex-1 relative bg-[#0a0f18] overflow-hidden group">
+<!-- Background Simulation Image -->
+<div class="absolute inset-0 bg-cover bg-center opacity-80 mix-blend-luminosity" data-alt="A highly detailed UI mockup of a simulated drone camera feed showing an industrial complex from above, realistic rendering, monochromatic with tech overlays, bright daytime lighting, minimalist corporate aesthetic, deep blacks and crisp grays." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCOmphxLiFlFo0g_Zd9S9dlwzY7C-jkl6JydNUJWhDA-5Te8KtKvwb9CIKaZ6SvFpoPNpjQpSIn5HZhipDzqNUBY05Rju4tyyNsXTMBByw7vuIxnGLDJ-lmD2ygbUayCmT8g0tjRnBQHoJugp1Lmk3fMpQ6cVuUq0oqAOjYyoq5OZNDl30qtkLtghEGFw-KQopu1dAuMksGMNeJtLTuCcDLffUCkmMo26WHKYMNTbTQPOX2WJbAgSRS7A')"></div>
+<!-- Overlays -->
+<div class="absolute inset-0 pointer-events-none">
+<!-- Center Crosshair -->
+<div class="absolute top-1/2 left-1/2 w-12 h-12 -translate-x-1/2 -translate-y-1/2">
+<div class="absolute top-0 bottom-0 left-1/2 w-[1px] bg-primary-fixed-dim/70 -translate-x-1/2"></div>
+<div class="absolute left-0 right-0 top-1/2 h-[1px] bg-primary-fixed-dim/70 -translate-y-1/2"></div>
+<div class="absolute inset-0 border border-primary-fixed-dim/50 rounded-full"></div>
+</div>
+<!-- Bounding Box Tracking -->
+<div class="absolute top-[30%] left-[40%] w-[120px] h-[80px] border border-inverse-primary bg-inverse-primary/10">
+<div class="absolute -top-5 left-0 bg-inverse-primary text-on-primary-fixed px-1 py-0.5 font-data-mono text-[10px] leading-none uppercase tracking-wider">Target A.1</div>
+<!-- Corner accents -->
+<div class="absolute -top-[1px] -left-[1px] w-2 h-2 border-t-2 border-l-2 border-inverse-primary"></div>
+<div class="absolute -top-[1px] -right-[1px] w-2 h-2 border-t-2 border-r-2 border-inverse-primary"></div>
+<div class="absolute -bottom-[1px] -left-[1px] w-2 h-2 border-b-2 border-l-2 border-inverse-primary"></div>
+<div class="absolute -bottom-[1px] -right-[1px] w-2 h-2 border-b-2 border-r-2 border-inverse-primary"></div>
+</div>
+</div>
+<!-- Video Controls Overlay -->
+<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-sm pt-xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-xs">
+<div class="w-full h-1 bg-surface-variant/30 rounded-full overflow-hidden cursor-pointer">
+<div class="h-full bg-primary-fixed-dim w-[45%]"></div>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-sm">
+<button class="text-white hover:text-primary-fixed-dim transition-colors">
+<span class="material-symbols-outlined text-[20px]">pause</span>
+</button>
+<span class="font-data-mono text-[10px] text-white">benchmark_test.mp4</span>
+</div>
+<div class="font-data-mono text-[10px] text-white/70">
+                                        00:04:12 / 00:09:55
+                                    </div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Stage: Data Logs / Timeline (Optional extra for density) -->
+<div class="h-[120px] bg-surface-container-lowest border border-outline-variant rounded shadow-sm flex flex-col shrink-0">
+<div class="h-8 bg-surface-bright border-b border-outline-variant flex items-center px-sm gap-sm shrink-0">
+<span class="material-symbols-outlined text-[16px] text-secondary">sort</span>
+<h2 class="font-label-caps text-label-caps text-on-surface">Event Timeline</h2>
+</div>
+<div class="flex-1 p-sm font-data-mono text-data-mono overflow-y-auto bg-surface flex flex-col gap-xs text-on-surface-variant">
+<div class="flex gap-md"><span class="text-secondary w-[100px] shrink-0">14:02:11.002</span> <span class="text-primary-container">[SYS]</span> Benchmark sequence initialized.</div>
+<div class="flex gap-md"><span class="text-secondary w-[100px] shrink-0">14:02:11.050</span> <span class="text-tertiary">[IO]</span> Loading benchmark_test.mp4 into buffer.</div>
+<div class="flex gap-md"><span class="text-secondary w-[100px] shrink-0">14:02:12.100</span> <span class="text-tertiary">[PROC]</span> Frame analysis engine started on thread 4.</div>
+<div class="flex gap-md"><span class="text-secondary w-[100px] shrink-0">14:02:12.450</span> <span class="text-primary">[TRACK]</span> Initial target acquisition successful. Confidence: 0.982.</div>
+</div>
+</div>
+</div>
+<!-- Right Fixed Panel: Controls & Metrics -->
+<div class="w-[320px] shrink-0 flex flex-col gap-gutter h-full overflow-y-auto">
+<!-- Benchmark Input Section -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded shadow-sm flex flex-col">
+<div class="h-8 bg-surface-bright border-b border-outline-variant flex items-center px-panel-padding">
+<h2 class="font-label-caps text-label-caps text-on-surface">Benchmark Input</h2>
+</div>
+<div class="p-panel-padding flex flex-col gap-sm">
+<!-- Upload Dropzone -->
+<label class="border-2 border-dashed border-outline-variant bg-surface hover:bg-surface-container transition-colors rounded-lg p-xl flex flex-col items-center justify-center text-center cursor-pointer group">
+<input accept=".mp4" class="hidden" type="file"/>
+<div class="w-10 h-10 rounded-full bg-surface-container-high group-hover:bg-primary-container/20 flex items-center justify-center mb-sm transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary-container text-[24px]">upload_file</span>
+</div>
+<span class="font-body-sm font-semibold text-on-surface block mb-xs">Upload Benchmark Video</span>
+<span class="font-body-sm text-secondary">Drop MP4 file here or Browse</span>
+</label>
+<!-- File Info (Hidden by default, shown for realism) -->
+<div class="flex items-center justify-between p-xs border border-outline-variant rounded bg-surface mt-xs">
+<div class="flex items-center gap-xs overflow-hidden">
+<span class="material-symbols-outlined text-secondary text-[16px] shrink-0">movie</span>
+<span class="font-data-mono text-data-mono text-on-surface truncate">benchmark_test.mp4</span>
+</div>
+<button class="text-secondary hover:text-error transition-colors p-1">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+<!-- Run Action -->
+<button class="mt-sm w-full bg-primary hover:bg-surface-tint text-on-primary font-body-sm font-semibold h-[32px] rounded flex items-center justify-center gap-xs transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[16px]">play_arrow</span>
+                            Run Benchmark
+                        </button>
+</div>
+</div>
+<!-- Performance Metrics Section -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded shadow-sm flex flex-col flex-1">
+<div class="h-8 bg-surface-bright border-b border-outline-variant flex items-center px-panel-padding justify-between">
+<h2 class="font-label-caps text-label-caps text-on-surface">Performance Metrics</h2>
+<span class="material-symbols-outlined text-secondary text-[16px]">bar_chart</span>
+</div>
+<div class="p-panel-padding flex flex-col gap-sm">
+<!-- Metric Grid -->
+<div class="grid grid-cols-2 gap-sm">
+<!-- Metric Card -->
+<div class="border border-outline-variant rounded bg-surface p-sm flex flex-col gap-xs">
+<span class="font-label-caps text-label-caps text-secondary">Processing Rate</span>
+<div class="flex items-baseline gap-xs">
+<span class="font-data-mono text-[16px] font-bold text-on-surface">142.5</span>
+<span class="font-data-mono text-[10px] text-secondary">FPS</span>
+</div>
+</div>
+<!-- Metric Card -->
+<div class="border border-outline-variant rounded bg-surface p-sm flex flex-col gap-xs">
+<span class="font-label-caps text-label-caps text-secondary">Avg Latency</span>
+<div class="flex items-baseline gap-xs">
+<span class="font-data-mono text-[16px] font-bold text-on-surface">7.02</span>
+<span class="font-data-mono text-[10px] text-secondary">ms</span>
+</div>
+</div>
+<!-- Metric Card (Full width) -->
+<div class="border border-outline-variant rounded bg-surface p-sm flex flex-col gap-xs col-span-2 border-l-4 border-l-primary-container">
+<span class="font-label-caps text-label-caps text-secondary">Alignment Accuracy (RMSE)</span>
+<div class="flex justify-between items-end">
+<span class="font-data-mono text-[20px] font-bold text-on-surface">0.0145<span class="text-[12px] text-secondary font-normal ml-1">rad</span></span>
+<span class="font-label-caps text-[10px] text-primary-container flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">trending_down</span> -0.002
+                                    </span>
+</div>
+</div>
+</div>
+<!-- System Resource Bars -->
+<div class="mt-md flex flex-col gap-sm">
+<div class="flex flex-col gap-xs">
+<div class="flex justify-between font-label-caps text-[10px] text-secondary">
+<span>CPU Utilization</span>
+<span class="font-data-mono text-[10px]">68%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[68%]"></div>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<div class="flex justify-between font-label-caps text-[10px] text-secondary">
+<span>GPU VRAM</span>
+<span class="font-data-mono text-[10px]">4.2 / 12 GB</span>
+</div>
+<div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[35%]"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

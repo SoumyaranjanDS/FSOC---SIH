@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>FSOC Coarse Alignment System - Dark Space</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #0b0f19; /* Dark Space Background */
+        color: #dce2f3;
+      }
+      .font-data-mono { font-family: "JetBrains Mono", monospace; }
+      .label-caps { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+      
+      /* Dark Space Panels */
+      .panel-bg { background-color: #151c27; }
+      .panel-border { border-color: #2a313d; }
+      .panel-hover:hover { background-color: #1a222f; }
+      
+      /* Grid Background for Virtual World (Radar style) */
+      .radar-bg {
+        background-color: #071018;
+        background-size: 40px 40px;
+        background-image:
+          linear-gradient(to right, rgba(108, 211, 247, 0.05) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(108, 211, 247, 0.05) 1px, transparent 1px);
+        box-shadow: inset 0 0 40px rgba(0,0,0,0.8);
+      }
+
+      /* Retro CRT Camera Effect */
+      .retro-crt {
+        background-color: #020a02; /* Deep dark green tint */
+        box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.9);
+        position: relative;
+      }
+      .retro-crt::before {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0; left: 0; bottom: 0; right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        z-index: 10;
+        background-size: 100% 2px, 3px 100%;
+        pointer-events: none;
+      }
+      .retro-noise {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        opacity: 0.12;
+        background-image: url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)"/%3E%3C/svg%3E');
+        pointer-events: none;
+        z-index: 9;
+      }
+
+      /* Animations */
+      .scanline {
+        width: 100%; height: 4px; background: rgba(74, 222, 128, 0.15);
+        position: absolute; animation: scan 4s linear infinite; pointer-events: none;
+        z-index: 11;
+        box-shadow: 0 0 10px rgba(74, 222, 128, 0.5);
+      }
+      @keyframes scan { 0% { top: -10%; } 100% { top: 110%; } }
+      .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+      
+      /* Custom Tracker Brackets */
+      .tracker-bracket {
+        position: absolute; width: 12px; height: 12px; border-color: #4ade80;
+      }
+    </style>
+  </head>
+  <body class="h-screen flex overflow-hidden text-[13px]">
+    
+    <!-- SideNavBar -->
+    <nav class="panel-bg border-r panel-border h-full w-[280px] flex flex-col py-4 px-2 shrink-0 z-20">
+      <div class="mb-6 px-2">
+        <h2 class="text-lg font-bold text-[#6cd3f7]">Triple-Engine System</h2>
+        <p class="font-data-mono text-[11px] text-gray-500 mt-1">v4.2.0-stable // AI-ENABLED</p>
+      </div>
+      <ul class="space-y-1 flex-1 overflow-y-auto">
+        <li>
+          <a class="flex items-center space-x-2 px-3 py-2 bg-[#1a222f] text-[#6cd3f7] rounded cursor-pointer select-none border border-[#2a313d]" href="#">
+            <span class="material-symbols-outlined text-[18px]">dashboard</span>
+            <span class="label-caps">Dashboard</span>
+          </a>
+        </li>
+        <li>
+          <a class="flex items-center space-x-2 px-3 py-2 text-gray-400 panel-hover rounded cursor-pointer select-none" href="#">
+            <span class="material-symbols-outlined text-[18px]">videocam</span>
+            <span class="label-caps">Camera Feed</span>
+          </a>
+        </li>
+        <li>
+          <a class="flex items-center space-x-2 px-3 py-2 text-gray-400 panel-hover rounded cursor-pointer select-none" href="#">
+            <span class="material-symbols-outlined text-[18px]">grid_4x4</span>
+            <span class="label-caps">World Grid</span>
+          </a>
+        </li>
+        <li>
+          <a class="flex items-center space-x-2 px-3 py-2 text-gray-400 panel-hover rounded cursor-pointer select-none" href="#">
+            <span class="material-symbols-outlined text-[18px]">tune</span>
+            <span class="label-caps">AI / Control Panel</span>
+          </a>
+        </li>
+        <li>
+          <a class="flex items-center space-x-2 px-3 py-2 text-gray-400 panel-hover rounded cursor-pointer select-none" href="#">
+            <span class="material-symbols-outlined text-[18px]">analytics</span>
+            <span class="label-caps">Telemetry</span>
+          </a>
+        </li>
+      </ul>
+      <div class="mt-auto space-y-1 pt-4 border-t panel-border">
+        <button class="w-full bg-[#111827] text-gray-300 hover:text-white panel-hover transition-colors label-caps py-2 rounded border panel-border">
+          Force Reset
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex flex-col min-w-0 bg-[#0b0f19]">
+      
+      <!-- TopNavBar -->
+      <header class="panel-bg flex justify-between items-center w-full px-4 h-12 border-b panel-border shrink-0 z-20">
+        <div class="flex items-center space-x-6">
+          <span class="text-[15px] font-semibold text-[#dce2f3]">FSOC Coarse Alignment System</span>
+          <nav class="hidden md:flex space-x-4 h-full">
+            <a class="text-[#6cd3f7] border-b-2 border-[#6cd3f7] flex items-center h-full cursor-pointer">Simulation</a>
+            <a class="text-gray-500 hover:text-gray-300 flex items-center h-full cursor-pointer">Benchmark</a>
+          </nav>
+        </div>
+        <div class="flex items-center space-x-3 text-gray-500">
+          <button id="theme-toggle" onclick="window.location.href='dashboard_concept.html'" class="px-2 py-1 border border-[#2a313d] rounded text-xs flex items-center text-gray-400 hover:bg-[#1a222f] transition-colors">
+             <span class="material-symbols-outlined text-[14px] mr-1">light_mode</span> Light Mode
+          </button>
+          <span class="material-symbols-outlined cursor-pointer hover:text-[#6cd3f7] text-[20px]">settings_input_component</span>
+          <span class="material-symbols-outlined cursor-pointer hover:text-[#6cd3f7] text-[20px]">monitor_heart</span>
+        </div>
+      </header>
+
+      <!-- Status Bar -->
+      <div class="bg-[#111827] border-b panel-border px-4 py-2 flex justify-between items-center shrink-0 z-20">
+        <div class="flex space-x-2">
+          <button class="px-2 py-1 bg-[#00647c] text-white label-caps rounded border border-[#007f9d]">Simulation Mode</button>
+          <button class="px-2 py-1 text-gray-400 panel-hover label-caps rounded border border-transparent">Hardware Mode</button>
+        </div>
+        <div class="flex space-x-6 font-data-mono text-gray-400 text-[11px]">
+          <span class="flex items-center"><span class="text-red-500 mr-1 text-[10px] pulse">●</span> NODE_WS: CONNECTED</span>
+          <span id="stat-fps">FPS: 30.0</span>
+          <span class="text-[#6cd3f7]">LOCK: ACTIVE</span>
+        </div>
+      </div>
+
+      <!-- Scrollable Content Canvas -->
+      <main class="flex-1 overflow-y-auto p-4 space-y-4">
+        
+        <!-- Visuals Row -->
+        <div class="grid grid-cols-2 gap-4 h-[380px]">
+          
+          <!-- Virtual World -->
+          <div class="panel-bg border panel-border rounded flex flex-col relative overflow-hidden shadow-lg">
+            <div class="bg-[#1a222f] border-b panel-border px-3 py-2 shrink-0 flex justify-between items-center z-10">
+              <div>
+                <span class="label-caps text-[#6cd3f7] block">Macro Environment Map</span>
+                <span class="font-data-mono text-[9px] text-gray-500">UAV Flight Path Simulation [2000x2000]</span>
+              </div>
+              <span class="material-symbols-outlined text-[18px] text-gray-500">public</span>
+            </div>
+            <!-- Radar Background -->
+            <div class="flex-1 radar-bg relative" id="world-container">
+              <!-- Grid crosshairs -->
+              <div class="absolute w-full h-[1px] bg-[#6cd3f7]/10 top-1/2"></div>
+              <div class="absolute h-full w-[1px] bg-[#6cd3f7]/10 left-1/2"></div>
+              
+              <!-- Trajectory Path -->
+              <svg class="absolute inset-0 w-full h-full pointer-events-none" id="world-svg"></svg>
+              
+              <!-- Camera FOV Box (The "Radar" Ping) -->
+              <div id="world-fov" class="absolute w-[180px] h-[135px] border-2 border-[#6cd3f7] bg-[#6cd3f7]/5 -ml-[90px] -mt-[67px] transition-all duration-75 shadow-[0_0_15px_rgba(108,211,247,0.2)]">
+                 <div class="absolute -top-5 left-0 text-[10px] font-data-mono text-[#6cd3f7] bg-[#0b0f19] px-1 border border-[#6cd3f7]">PTZ FOV (4°x3°)</div>
+              </div>
+              
+              <!-- Target UAV Beacon -->
+              <div id="world-beacon" class="absolute w-4 h-4 bg-[#f97316] rounded-full -ml-[8px] -mt-[8px] shadow-[0_0_15px_#f97316] flex items-center justify-center">
+                 <div class="w-2 h-2 bg-white rounded-full"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Camera Feed (Retro) -->
+          <div class="panel-bg border panel-border rounded flex flex-col relative overflow-hidden shadow-lg">
+            <div class="bg-[#1a222f] border-b panel-border px-3 py-2 shrink-0 flex justify-between items-center z-20">
+              <div>
+                <span class="label-caps text-[#4ade80] block">Optical Sensor Feed</span>
+                <span class="font-data-mono text-[9px] text-gray-500">Laser Targeting Camera (Raw Data)</span>
+              </div>
+              <span class="material-symbols-outlined text-[18px] text-gray-500">visibility</span>
+            </div>
+            
+            <!-- Retro CRT Display -->
+            <div class="flex-1 retro-crt relative flex justify-center items-center overflow-hidden" id="cam-container">
+              <div class="retro-noise"></div>
+              <div class="scanline"></div>
+              
+              <!-- Retro HUD Borders (Corners) -->
+              <div class="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-[#4ade80]/30 z-10"></div>
+              <div class="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-[#4ade80]/30 z-10"></div>
+              <div class="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-[#4ade80]/30 z-10"></div>
+              <div class="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-[#4ade80]/30 z-10"></div>
+              
+              <!-- Crosshair (Dashed retro style) -->
+              <div class="absolute w-full h-[1px] border-t border-dashed border-[#4ade80]/40 top-1/2 -translate-y-1/2 z-10"></div>
+              <div class="absolute h-full w-[1px] border-l border-dashed border-[#4ade80]/40 left-1/2 -translate-x-1/2 z-10"></div>
+              <div class="absolute w-8 h-8 border border-[#4ade80]/50 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"></div>
+              
+              <!-- Target Box (Kalman Filter brackets) -->
+              <div id="cam-tracker" class="absolute w-16 h-16 -ml-8 -mt-8 z-20">
+                 <!-- 4 brackets forming a square -->
+                 <div class="tracker-bracket top-0 left-0 border-t-2 border-l-2"></div>
+                 <div class="tracker-bracket top-0 right-0 border-t-2 border-r-2"></div>
+                 <div class="tracker-bracket bottom-0 left-0 border-b-2 border-l-2"></div>
+                 <div class="tracker-bracket bottom-0 right-0 border-b-2 border-r-2"></div>
+                 <div class="absolute -top-4 right-0 font-data-mono text-[9px] text-[#4ade80]">K-FLT</div>
+              </div>
+              
+              <!-- Laser Spot (Beacon) -->
+              <div id="cam-beacon" class="absolute w-3 h-3 bg-[#4ade80] rounded-full -ml-[1.5px] -mt-[1.5px] shadow-[0_0_12px_#4ade80,0_0_20px_#fff] z-20"></div>
+              
+              <!-- AI Prediction SVG -->
+              <svg class="absolute inset-0 w-full h-full pointer-events-none z-10">
+                  <path id="cam-pred-path" d="" fill="none" stroke="#eab308" stroke-width="2" stroke-dasharray="4 4" opacity="0.8"/>
+              </svg>
+              <div id="cam-pred-point" class="absolute w-2 h-2 bg-[#eab308] rounded-full shadow-[0_0_10px_#eab308] -ml-[4px] -mt-[4px] z-20">
+                 <div class="absolute -top-4 -right-12 font-data-mono text-[9px] text-[#eab308]">LSTM+1.5s</div>
+              </div>
+
+              <!-- OSD Info -->
+              <div class="absolute bottom-3 right-3 font-data-mono text-[10px] text-[#4ade80] text-right z-20 leading-tight">
+                <div>SENSOR: ACTIVE</div>
+                <div>ISO: 1600</div>
+                <div>EXP: 1/120</div>
+              </div>
+              
+              <!-- Warning text if error is high -->
+              <div id="cam-warning" class="absolute top-3 left-1/2 -translate-x-1/2 font-data-mono text-[12px] text-red-500 font-bold z-20 hidden pulse bg-black/50 px-2 py-1">
+                 ! HIGH TRACKING ERROR !
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metrics Row -->
+        <div class="grid grid-cols-6 gap-4">
+          <div class="panel-bg border panel-border rounded p-3 flex flex-col bg-[#111827]">
+            <span class="label-caps text-gray-500 mb-1">Status</span>
+            <span class="font-data-mono text-[#4ade80] font-bold text-[14px]">LOCKED</span>
+          </div>
+          <div class="panel-bg border panel-border rounded p-3 flex flex-col bg-[#111827]">
+            <span class="label-caps text-gray-500 mb-1">Engines Active</span>
+            <span class="font-data-mono text-white text-[14px]">3 / 3</span>
+          </div>
+          <div class="panel-bg border panel-border rounded p-3 flex flex-col bg-[#111827]">
+            <span class="label-caps text-gray-500 mb-1">RMSE Error</span>
+            <span id="stat-rmse" class="font-data-mono text-[#4ade80] text-[14px]">2.41 px</span>
+          </div>
+          <div class="panel-bg border panel-border rounded p-3 flex flex-col bg-[#111827]">
+            <span class="label-caps text-gray-500 mb-1">Pan Angle</span>
+            <span id="stat-pan" class="font-data-mono text-white text-[14px]">12.4°</span>
+          </div>
+          <div class="panel-bg border panel-border rounded p-3 flex flex-col bg-[#111827]">
+            <span class="label-caps text-gray-500 mb-1">Tilt Angle</span>
+            <span id="stat-tilt" class="font-data-mono text-white text-[14px]">-2.3°</span>
+          </div>
+          <div class="panel-bg border panel-border rounded p-3 flex flex-col bg-[#111827]">
+            <span class="label-caps text-gray-500 mb-1">Target Loss</span>
+            <span class="font-data-mono text-[#4ade80] text-[14px]">0.00 %</span>
+          </div>
+        </div>
+
+        <!-- Controls & Performance Row -->
+        <div class="grid grid-cols-3 gap-4">
+          
+          <!-- Controls Panel -->
+          <div class="col-span-1 panel-bg border panel-border rounded p-3 flex flex-col">
+            <div class="border-b panel-border pb-2 mb-3">
+              <span class="label-caps text-gray-300">Environment Disturbance</span>
+            </div>
+            <div class="space-y-3 flex-1">
+              <div>
+                <label class="text-[12px] font-bold text-gray-400 block mb-1">Target Motion</label>
+                <select class="w-full h-8 px-2 text-[12px] bg-[#111827] border panel-border rounded text-gray-300 focus:outline-none focus:border-[#6cd3f7]">
+                  <option>Figure 8 (PDF Default)</option>
+                  <option>Circular</option>
+                  <option>Random Walk</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[12px] font-bold text-gray-400 block mb-1">Atmospheric (Contrast)</label>
+                <select class="w-full h-8 px-2 text-[12px] bg-[#111827] border panel-border rounded text-gray-300 focus:outline-none focus:border-[#6cd3f7]">
+                  <option>Clear</option>
+                  <option>Fog Level 3</option>
+                  <option>Heavy Rain</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[12px] font-bold text-gray-400 flex justify-between mb-1">
+                  Camera Jitter (Noise)
+                  <span class="font-data-mono font-normal text-[#6cd3f7]">15.0px</span>
+                </label>
+                <input type="range" min="0" max="20" value="15" class="w-full accent-[#6cd3f7]"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- Performance Panel -->
+          <div class="col-span-2 panel-bg border panel-border rounded p-3 flex flex-col">
+            <div class="border-b panel-border pb-2 mb-3 flex justify-between items-center">
+              <span class="label-caps text-gray-300">Performance Telemetry (PDF Benchmarks)</span>
+              <button class="text-[#6cd3f7] label-caps hover:underline flex items-center">
+                <span class="material-symbols-outlined text-[14px] mr-1">download</span> Export Log
+              </button>
+            </div>
+            <div class="flex-1 flex flex-col">
+              
+              <!-- Chart Area Placeholder -->
+              <div class="h-28 bg-[#111827] border panel-border rounded mb-3 relative overflow-hidden flex items-end p-2">
+                <span class="absolute top-2 left-2 label-caps text-gray-500 text-[9px]">Tracking Error Variance</span>
+                <svg class="w-full h-full absolute inset-0" preserveAspectRatio="none" viewBox="0 0 100 100">
+                  <path id="chart-line" d="M0 80 L10 75 L20 85 L30 60 L40 70 L50 40 L60 55 L70 30 L80 45 L90 20 L100 35" fill="none" stroke="#4ade80" stroke-linecap="round" stroke-width="2"></path>
+                </svg>
+              </div>
+              
+              <!-- Stats Grid -->
+              <div class="grid grid-cols-5 gap-2 mt-auto">
+                <div class="bg-[#111827] p-2 rounded border panel-border">
+                  <div class="label-caps text-gray-500 text-[9px]">Acq Time</div>
+                  <div class="font-data-mono text-white mt-1">0.82s</div>
+                  <div class="font-data-mono text-gray-600 text-[9px] mt-0.5">&le; 2.0s req</div>
+                </div>
+                <div class="bg-[#111827] p-2 rounded border panel-border">
+                  <div class="label-caps text-gray-500 text-[9px]">Re-Acq Time</div>
+                  <div class="font-data-mono text-white mt-1">0.14s</div>
+                  <div class="font-data-mono text-gray-600 text-[9px] mt-0.5">&le; 1.0s req</div>
+                </div>
+                <div class="bg-[#111827] p-2 rounded border panel-border">
+                  <div class="label-caps text-gray-500 text-[9px]">Max Error</div>
+                  <div class="font-data-mono text-[#ba1a1a] mt-1">11.2px</div>
+                  <div class="font-data-mono text-gray-600 text-[9px] mt-0.5">Spike</div>
+                </div>
+                <div class="bg-[#111827] p-2 rounded border panel-border">
+                  <div class="label-caps text-gray-500 text-[9px]">AI Predictor</div>
+                  <div class="font-data-mono text-[#eab308] mt-1">ACTIVE</div>
+                  <div class="font-data-mono text-gray-600 text-[9px] mt-0.5">LSTM V2</div>
+                </div>
+                <div class="bg-[#111827] p-2 rounded border panel-border">
+                  <div class="label-caps text-gray-500 text-[9px]">CV2 Tracker</div>
+                  <div class="font-data-mono text-[#4ade80] mt-1">ACTIVE</div>
+                  <div class="font-data-mono text-gray-600 text-[9px] mt-0.5">K-FLT</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- LIVE WEBSOCKET CONNECTION -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      
+      const worldBeacon = document.getElementById("world-beacon");
+      const worldFOV = document.getElementById("world-fov");
+      
+      const camBeacon = document.getElementById("cam-beacon");
+      const camTracker = document.getElementById("cam-tracker");
+      const camPredPath = document.getElementById("cam-pred-path");
+      const camPredPoint = document.getElementById("cam-pred-point");
+      const camWarning = document.getElementById("cam-warning");
+      
+      const statRMSE = document.getElementById("stat-rmse");
+      const statPan = document.getElementById("stat-pan");
+      const statTilt = document.getElementById("stat-tilt");
+      const chartLine = document.getElementById("chart-line");
+      const statFPS = document.getElementById("stat-fps");
+      
+      // Draw background figure 8 path in world
+      const worldSvg = document.getElementById("world-svg");
+      let pathData = "M ";
+      for(let i=0; i<=100; i+=2) {
+         let pt = i * (Math.PI * 2 / 100);
+         let px = 50 + 40 * Math.sin(pt); 
+         let py = 50 + 30 * Math.sin(pt * 2); 
+         pathData += `${px}% ${py}% ${i===0?'':'L '}`;
+      }
+      worldSvg.innerHTML = `<path d="${pathData}" fill="none" stroke="#2a313d" stroke-width="2" stroke-dasharray="4 4" />`;
+
+      let chartPoints = Array.from({length: 11}, () => 80);
+      let frames = 0;
+      setInterval(() => {
+          statFPS.innerText = `FPS: ${frames}`;
+          frames = 0;
+      }, 1000);
+
+      socket.on('telemetry', (data) => {
+          frames++;
+          
+          // --- VIRTUAL WORLD UPDATE ---
+          worldBeacon.style.left = `${data.world.trueX}%`;
+          worldBeacon.style.top = `${data.world.trueY}%`;
+          worldFOV.style.left = `${data.world.fovX}%`;
+          worldFOV.style.top = `${data.world.fovY}%`;
+
+          // --- CAMERA FEED UPDATE ---
+          camBeacon.style.left = `${data.camera.camX}%`;
+          camBeacon.style.top = `${data.camera.camY}%`;
+          
+          camTracker.style.left = `${data.camera.trackerX}%`;
+          camTracker.style.top = `${data.camera.trackerY}%`;
+          
+          // AI Prediction: Projecting the future curve
+          if (data.camera.predictions && data.camera.predictions.length >= 3) {
+              let predD = `M ${data.camera.trackerX}% ${data.camera.trackerY}% `;
+              const p1 = data.camera.predictions[0];
+              const p2 = data.camera.predictions[1];
+              const p3 = data.camera.predictions[2];
+              
+              predD += `Q ${p1.x}% ${p1.y}% ${p2.x}% ${p2.y}% T ${p3.x}% ${p3.y}%`;
+              camPredPath.setAttribute("d", predD);
+              camPredPoint.style.left = `${p3.x}%`;
+              camPredPoint.style.top = `${p3.y}%`;
+          }
+
+          // --- METRICS UPDATE ---
+          const currentRMSE = data.metrics.rmse;
+          statRMSE.innerText = `${currentRMSE.toFixed(2)} px`;
+          
+          if (data.metrics.highError) {
+              statRMSE.classList.add('text-red-500');
+              statRMSE.classList.remove('text-[#4ade80]');
+              camWarning.classList.remove('hidden');
+          } else {
+              statRMSE.classList.remove('text-red-500');
+              statRMSE.classList.add('text-[#4ade80]');
+              camWarning.classList.add('hidden');
+          }
+
+          statPan.innerText = `${data.metrics.pan}°`;
+          statTilt.innerText = `${data.metrics.tilt}°`;
+          
+          // Update Chart
+          chartPoints.shift();
+          chartPoints.push(100 - (currentRMSE * 2.5)); 
+          let chartPath = "";
+          for(let i=0; i<chartPoints.length; i++) {
+              chartPath += `${i===0?'M':'L'} ${i*10} ${chartPoints[i]} `;
+          }
+          chartLine.setAttribute("d", chartPath);
+      });
+    </script>
+  </body>
+</html>

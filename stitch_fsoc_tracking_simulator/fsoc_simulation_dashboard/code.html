@@ -1,0 +1,695 @@
+<!doctype html>
+
+<html class="light" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>FSOC Coarse Alignment System - Simulation Mode</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#3c475a",
+              "surface-variant": "#dce2f3",
+              "on-primary-container": "#fafdff",
+              "primary-container": "#007f9d",
+              "surface-dim": "#d3daea",
+              outline: "#6e797e",
+              "surface-tint": "#006780",
+              "on-tertiary-fixed-variant": "#454748",
+              "inverse-primary": "#6cd3f7",
+              "secondary-fixed-dim": "#bcc7de",
+              "on-background": "#151c27",
+              error: "#ba1a1a",
+              "surface-container-lowest": "#ffffff",
+              secondary: "#545f73",
+              "surface-container-high": "#e2e8f8",
+              "secondary-fixed": "#d8e3fb",
+              "primary-fixed-dim": "#6cd3f7",
+              "on-primary-fixed": "#001f28",
+              "on-tertiary-fixed": "#191c1d",
+              "secondary-container": "#d5e0f8",
+              "on-error": "#ffffff",
+              "tertiary-fixed-dim": "#c5c7c8",
+              background: "#f9f9ff",
+              "on-primary-fixed-variant": "#004e61",
+              "on-tertiary-container": "#fcfdfe",
+              "on-secondary-fixed": "#111c2d",
+              "tertiary-fixed": "#e1e3e4",
+              "surface-container-highest": "#dce2f3",
+              "outline-variant": "#bdc8ce",
+              "on-surface-variant": "#3e484d",
+              "inverse-surface": "#2a313d",
+              "error-container": "#ffdad6",
+              primary: "#00647c",
+              "on-tertiary": "#ffffff",
+              "surface-container": "#e7eefe",
+              "on-error-container": "#93000a",
+              "inverse-on-surface": "#ebf1ff",
+              "primary-fixed": "#b7eaff",
+              tertiary: "#5a5c5d",
+              "on-secondary-container": "#586377",
+              "on-surface": "#151c27",
+              "on-secondary": "#ffffff",
+              surface: "#f9f9ff",
+              "tertiary-container": "#737576",
+              "surface-bright": "#f9f9ff",
+              "on-primary": "#ffffff",
+              "surface-container-low": "#f0f3ff",
+            },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
+            spacing: {
+              gutter: "12px",
+              xs: "4px",
+              sm: "8px",
+              md: "16px",
+              unit: "4px",
+              xl: "32px",
+              "panel-padding": "12px",
+              lg: "24px",
+            },
+            fontFamily: {
+              "body-base": ["Inter", "sans-serif"],
+              "label-caps": ["Inter", "sans-serif"],
+              "headline-md": ["Inter", "sans-serif"],
+              "headline-sm": ["Inter", "sans-serif"],
+              "display-lg": ["Inter", "sans-serif"],
+              "body-sm": ["Inter", "sans-serif"],
+              "data-mono": ["JetBrains Mono", "monospace"],
+            },
+            fontSize: {
+              "body-base": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+              "label-caps": [
+                "11px",
+                {
+                  lineHeight: "16px",
+                  letterSpacing: "0.05em",
+                  fontWeight: "600",
+                },
+              ],
+              "headline-md": [
+                "24px",
+                {
+                  lineHeight: "32px",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "600",
+                },
+              ],
+              "headline-sm": [
+                "18px",
+                { lineHeight: "24px", fontWeight: "600" },
+              ],
+              "display-lg": [
+                "32px",
+                {
+                  lineHeight: "40px",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "600",
+                },
+              ],
+              "body-sm": ["13px", { lineHeight: "18px", fontWeight: "400" }],
+              "data-mono": ["12px", { lineHeight: "16px", fontWeight: "500" }],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f9f9ff;
+      }
+      .grid-bg {
+        background-size: 20px 20px;
+        background-image:
+          linear-gradient(to right, #e2e8f8 1px, transparent 1px),
+          linear-gradient(to bottom, #e2e8f8 1px, transparent 1px);
+      }
+    </style>
+  </head>
+  <body class="bg-background text-on-surface h-screen flex overflow-hidden">
+    <!-- SideNavBar -->
+    <nav
+      class="bg-surface dark:bg-surface-container-low border-r border-outline-variant dark:border-outline h-full w-[280px] flex flex-col py-md px-sm shrink-0"
+    >
+      <div class="mb-lg px-sm">
+        <h2
+          class="font-headline-sm text-headline-sm font-bold text-on-surface dark:text-on-surface-variant"
+        >
+          Alignment Engine
+        </h2>
+        <p class="font-body-sm text-body-sm text-secondary mt-xs">
+          v4.2.0-stable
+        </p>
+      </div>
+      <ul class="space-y-sm flex-1 overflow-y-auto">
+        <li>
+          <a
+            class="flex items-center space-x-sm px-sm py-sm text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all rounded-lg cursor-pointer select-none"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[18px]">dashboard</span>
+            <span class="font-label-caps text-label-caps">Dashboard</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center space-x-sm px-sm py-sm text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all rounded-lg cursor-pointer select-none"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[18px]">videocam</span>
+            <span class="font-label-caps text-label-caps">Camera Feed</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center space-x-sm px-sm py-sm bg-secondary-container dark:bg-on-secondary-fixed-variant text-on-secondary-container dark:text-secondary-fixed transition-all rounded-lg cursor-pointer select-none"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[18px]">grid_4x4</span>
+            <span class="font-label-caps text-label-caps">World Grid</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center space-x-sm px-sm py-sm text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all rounded-lg cursor-pointer select-none"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[18px]">tune</span>
+            <span class="font-label-caps text-label-caps">Control Panel</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center space-x-sm px-sm py-sm text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all rounded-lg cursor-pointer select-none"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[18px]">analytics</span>
+            <span class="font-label-caps text-label-caps">Telemetry</span>
+          </a>
+        </li>
+      </ul>
+      <div
+        class="mt-auto space-y-sm pt-md border-t border-outline-variant dark:border-outline"
+      >
+        <ul class="space-y-sm mb-md">
+          <li>
+            <a
+              class="flex items-center space-x-sm px-sm py-sm text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all rounded-lg cursor-pointer select-none"
+              href="#"
+            >
+              <span class="material-symbols-outlined text-[18px]"
+                >list_alt</span
+              >
+              <span class="font-label-caps text-label-caps">Logs</span>
+            </a>
+          </li>
+          <li>
+            <a
+              class="flex items-center space-x-sm px-sm py-sm text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-all rounded-lg cursor-pointer select-none"
+              href="#"
+            >
+              <span class="material-symbols-outlined text-[18px]"
+                >terminal</span
+              >
+              <span class="font-label-caps text-label-caps">Terminal</span>
+            </a>
+          </li>
+        </ul>
+        <button
+          class="w-full bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors font-label-caps text-label-caps py-sm rounded border border-outline-variant"
+        >
+          Force Reset
+        </button>
+      </div>
+    </nav>
+    <!-- Main Workspace -->
+    <div class="flex-1 flex flex-col min-w-0 bg-surface-container-low">
+      <!-- TopNavBar -->
+      <header
+        class="bg-surface dark:bg-surface-container-low flex justify-between items-center w-full px-gutter h-10 border-b border-outline-variant dark:border-outline shrink-0"
+      >
+        <div class="flex items-center space-x-lg">
+          <span
+            class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-primary-fixed"
+            >FSOC Coarse Alignment System</span
+          >
+          <nav class="hidden md:flex space-x-md h-full">
+            <a
+              class="font-body-base text-body-base text-primary dark:text-primary-fixed border-b-2 border-primary dark:border-primary-fixed pb-1 h-full flex items-center hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70"
+              href="#"
+              >Simulation</a
+            >
+            <a
+              class="font-body-base text-body-base text-secondary dark:text-secondary-fixed-dim h-full flex items-center hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70"
+              href="#"
+              >Benchmark</a
+            >
+            <a
+              class="font-body-base text-body-base text-secondary dark:text-secondary-fixed-dim h-full flex items-center hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70"
+              href="#"
+              >Analytics</a
+            >
+            <a
+              class="font-body-base text-body-base text-secondary dark:text-secondary-fixed-dim h-full flex items-center hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer active:opacity-70"
+              href="#"
+              >Settings</a
+            >
+          </nav>
+        </div>
+        <div class="flex items-center space-x-sm text-secondary">
+          <span
+            class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors text-[20px]"
+            >settings_input_component</span
+          >
+          <span
+            class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors text-[20px]"
+            >monitor_heart</span
+          >
+          <span
+            class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors text-[20px]"
+            >lock_open</span
+          >
+        </div>
+      </header>
+      <!-- Status Bar -->
+      <div
+        class="bg-surface border-b border-outline-variant px-md py-xs flex justify-between items-center shrink-0"
+      >
+        <div class="flex space-x-sm">
+          <button
+            class="px-sm py-xs bg-primary-container text-on-primary-container font-label-caps text-label-caps rounded"
+          >
+            Simulation Mode
+          </button>
+          <button
+            class="px-sm py-xs text-secondary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps rounded"
+          >
+            Hardware Mode
+          </button>
+        </div>
+        <div
+          class="flex space-x-md font-data-mono text-data-mono text-secondary"
+        >
+          <span class="flex items-center"
+            ><span class="text-error mr-xs text-[10px]">●</span> LIVE |
+            Simulation Mode</span
+          >
+          <span>FPS: 43.7</span>
+          <span class="text-primary-container">Lock: ACTIVE</span>
+        </div>
+      </div>
+      <!-- Scrollable Content Canvas -->
+      <main class="flex-1 overflow-y-auto p-md space-y-md">
+        <!-- Visuals Row -->
+        <div class="grid grid-cols-2 gap-md h-[400px]">
+          <!-- Virtual World -->
+          <div
+            class="bg-surface border border-outline-variant rounded flex flex-col relative overflow-hidden"
+          >
+            <div
+              class="bg-surface-container-lowest border-b border-outline-variant px-sm py-xs shrink-0 flex justify-between items-center z-10"
+            >
+              <span class="font-label-caps text-label-caps text-on-surface"
+                >Virtual World</span
+              >
+              <span class="material-symbols-outlined text-[16px] text-secondary"
+                >public</span
+              >
+            </div>
+            <div class="flex-1 grid-bg relative">
+              <!-- Trajectory -->
+              <svg
+                class="absolute inset-0 w-full h-full"
+                style="pointer-events: none"
+              >
+                <path
+                  d="M 50 350 Q 150 200 350 150 T 500 50"
+                  fill="none"
+                  stroke="#bcc7de"
+                  stroke-dasharray="4 4"
+                  stroke-width="2"
+                ></path>
+              </svg>
+              <!-- Beacon -->
+              <div
+                class="absolute w-3 h-3 bg-[#f97316] rounded-full top-[144px] left-[344px] shadow-[0_0_8px_#f97316]"
+              ></div>
+              <!-- Camera/FOV -->
+              <div class="absolute top-[340px] left-[40px] text-primary">
+                <svg height="40" viewbox="0 0 40 40" width="40">
+                  <path
+                    d="M 20 5 L 35 35 L 5 35 Z"
+                    fill="currentColor"
+                    fill-opacity="0.2"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  ></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <!-- Camera Feed -->
+          <div
+            class="bg-surface border border-outline-variant rounded flex flex-col relative overflow-hidden"
+          >
+            <div
+              class="bg-surface-container-lowest border-b border-outline-variant px-sm py-xs shrink-0 flex justify-between items-center z-10"
+            >
+              <span class="font-label-caps text-label-caps text-on-surface"
+                >Virtual Camera Feed</span
+              >
+              <span class="material-symbols-outlined text-[16px] text-secondary"
+                >visibility</span
+              >
+            </div>
+            <div
+              class="flex-1 bg-[#1a1c1e] relative flex justify-center items-center overflow-hidden"
+            >
+              <div
+                class="absolute inset-0 bg-cover bg-center opacity-40"
+                data-alt="A simulated, dark, low-light camera feed showing a starfield or minimal optical target environment. The scene is mostly deep blacks and dark grays, resembling a scientific instrument's raw optical sensor output. There is a slight noise pattern typical of digital sensors. Minimalistic and technical."
+                style="
+                  background-image: url(&quot;https://lh3.googleusercontent.com/aida-public/AB6AXuDfrCpLWIRvFF9YptkYK1jLoh7K-73MvLyUY59TNkryQHhtvcE07HQsXKbJA6DgecY-DKfTeboskVghRks_ZU2rxK8-cnnDVNQgpkyfARPiir2YdeMSUTBSZ1FQpLgkJCyupicKuepm57XWiC3wzR1Aj1ha7hp6L-IQZhpP0TPY2jQGOZAjd2wwkUaSuaA6tWElXKiFpZYuXrkSo-buRSJ-Mm09s62k3TV_neQWjlkU8NvXn3TAFZu8GA&quot;);
+                "
+              ></div>
+              <!-- Overlay Elements -->
+              <div
+                class="absolute inset-0 border border-[#0891b2] opacity-30 pointer-events-none m-md"
+              ></div>
+              <!-- Crosshair -->
+              <div
+                class="absolute w-full h-[1px] bg-white/20 top-1/2 -translate-y-1/2"
+              ></div>
+              <div
+                class="absolute h-full w-[1px] bg-white/20 left-1/2 -translate-x-1/2"
+              ></div>
+              <!-- Target Box & Dot -->
+              <div
+                class="absolute top-[40%] left-[60%] border-2 border-[#22c55e] w-12 h-12 -translate-x-1/2 -translate-y-1/2"
+              ></div>
+              <div
+                class="absolute top-[40%] left-[60%] w-2 h-2 bg-white rounded-full -translate-x-1/2 -translate-y-1/2 shadow-[0_0_10px_white]"
+              ></div>
+              <!-- OSD Info -->
+              <div
+                class="absolute bottom-sm left-sm font-data-mono text-[10px] text-[#22c55e] bg-black/50 px-sm py-xs"
+              >
+                Target Detected | Confidence: 96%
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Metrics Row -->
+        <div class="grid grid-cols-6 gap-sm">
+          <div
+            class="bg-surface border border-outline-variant rounded p-sm flex flex-col"
+          >
+            <span class="font-label-caps text-label-caps text-secondary mb-xs"
+              >Status</span
+            >
+            <span
+              class="font-data-mono text-data-mono text-primary-container font-bold text-[14px]"
+              >LOCKED</span
+            >
+          </div>
+          <div
+            class="bg-surface border border-outline-variant rounded p-sm flex flex-col"
+          >
+            <span class="font-label-caps text-label-caps text-secondary mb-xs"
+              >FPS</span
+            >
+            <span
+              class="font-data-mono text-data-mono text-on-surface text-[14px]"
+              >43.7</span
+            >
+          </div>
+          <div
+            class="bg-surface border border-outline-variant rounded p-sm flex flex-col"
+          >
+            <span class="font-label-caps text-label-caps text-secondary mb-xs"
+              >Tracking Err</span
+            >
+            <span
+              class="font-data-mono text-data-mono text-on-surface text-[14px]"
+              >5.2 px</span
+            >
+          </div>
+          <div
+            class="bg-surface border border-outline-variant rounded p-sm flex flex-col"
+          >
+            <span class="font-label-caps text-label-caps text-secondary mb-xs"
+              >Pan</span
+            >
+            <span
+              class="font-data-mono text-data-mono text-on-surface text-[14px]"
+              >12.4°</span
+            >
+          </div>
+          <div
+            class="bg-surface border border-outline-variant rounded p-sm flex flex-col"
+          >
+            <span class="font-label-caps text-label-caps text-secondary mb-xs"
+              >Tilt</span
+            >
+            <span
+              class="font-data-mono text-data-mono text-on-surface text-[14px]"
+              >-2.3°</span
+            >
+          </div>
+          <div
+            class="bg-surface border border-outline-variant rounded p-sm flex flex-col"
+          >
+            <span class="font-label-caps text-label-caps text-secondary mb-xs"
+              >Target Loss</span
+            >
+            <span
+              class="font-data-mono text-data-mono text-on-surface text-[14px]"
+              >2.1%</span
+            >
+          </div>
+        </div>
+        <!-- Controls & Performance Row -->
+        <div class="grid grid-cols-3 gap-md">
+          <!-- Controls Panel -->
+          <div
+            class="col-span-1 bg-surface border border-outline-variant rounded p-panel-padding flex flex-col"
+          >
+            <div class="border-b border-outline-variant pb-xs mb-sm">
+              <span class="font-label-caps text-label-caps text-on-surface"
+                >Simulation Controls</span
+              >
+            </div>
+            <div class="space-y-sm flex-1">
+              <div>
+                <label
+                  class="font-body-sm text-body-sm font-bold text-on-surface block mb-xs"
+                  >Target Motion</label
+                >
+                <select
+                  class="w-full h-8 text-body-sm border-outline-variant rounded focus:ring-primary focus:border-primary text-secondary"
+                >
+                  <option>Linear Trajectory</option>
+                  <option>Circular</option>
+                  <option>Random Walk</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  class="font-body-sm text-body-sm font-bold text-on-surface block mb-xs"
+                  >Sensor Noise</label
+                >
+                <select
+                  class="w-full h-8 text-body-sm border-outline-variant rounded focus:ring-primary focus:border-primary text-secondary"
+                >
+                  <option>Gaussian (Low)</option>
+                  <option>Gaussian (High)</option>
+                  <option>None</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  class="font-body-sm text-body-sm font-bold text-on-surface block mb-xs"
+                  >Platform Motion</label
+                >
+                <select
+                  class="w-full h-8 text-body-sm border-outline-variant rounded focus:ring-primary focus:border-primary text-secondary"
+                >
+                  <option>Static</option>
+                  <option>Sine Wave</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  class="font-body-sm text-body-sm font-bold text-on-surface flex justify-between mb-xs"
+                >
+                  Camera Jitter
+                  <span class="font-data-mono font-normal">1.5px</span>
+                </label>
+                <input
+                  class="w-full accent-primary"
+                  max="5"
+                  min="0"
+                  step="0.1"
+                  type="range"
+                  value="1.5"
+                />
+              </div>
+            </div>
+            <div class="mt-md space-y-sm pt-sm border-t border-outline-variant">
+              <div class="flex space-x-sm">
+                <button
+                  class="flex-1 bg-primary text-white h-8 font-label-caps text-label-caps rounded flex items-center justify-center space-x-xs hover:bg-primary-fixed-variant transition-colors"
+                >
+                  <span class="material-symbols-outlined text-[16px]"
+                    >play_arrow</span
+                  >
+                  <span>Start</span>
+                </button>
+                <button
+                  class="flex-1 bg-surface border border-outline-variant text-on-surface h-8 font-label-caps text-label-caps rounded flex items-center justify-center space-x-xs hover:bg-surface-container-high transition-colors"
+                >
+                  <span class="material-symbols-outlined text-[16px]"
+                    >pause</span
+                  >
+                  <span>Pause</span>
+                </button>
+              </div>
+              <button
+                class="w-full bg-surface border border-outline-variant text-on-surface h-8 font-label-caps text-label-caps rounded flex items-center justify-center space-x-xs hover:bg-surface-container-high transition-colors"
+              >
+                <span class="material-symbols-outlined text-[16px]"
+                  >restart_alt</span
+                >
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+          <!-- Performance Panel -->
+          <div
+            class="col-span-2 bg-surface border border-outline-variant rounded p-panel-padding flex flex-col"
+          >
+            <div
+              class="border-b border-outline-variant pb-xs mb-sm flex justify-between items-center"
+            >
+              <span class="font-label-caps text-label-caps text-on-surface"
+                >Performance Telemetry</span
+              >
+              <button
+                class="text-primary font-label-caps text-label-caps hover:underline flex items-center"
+              >
+                <span class="material-symbols-outlined text-[14px] mr-xs"
+                  >download</span
+                >
+                Report
+              </button>
+            </div>
+            <div class="flex-1 flex flex-col">
+              <!-- Chart Area Placeholder -->
+              <div
+                class="h-32 bg-surface-container-low border border-outline-variant rounded mb-sm relative overflow-hidden flex items-end px-xs pb-xs"
+              >
+                <span
+                  class="absolute top-xs left-xs font-label-caps text-label-caps text-secondary text-[9px]"
+                  >Tracking Error (px)</span
+                >
+                <!-- Mock Line Chart -->
+                <svg
+                  class="w-full h-full absolute inset-0"
+                  preserveaspectratio="none"
+                  viewbox="0 0 100 100"
+                >
+                  <path
+                    d="M0 80 L10 75 L20 85 L30 60 L40 70 L50 40 L60 55 L70 30 L80 45 L90 20 L100 35"
+                    fill="none"
+                    stroke="#00647c"
+                    stroke-linecap="round"
+                    stroke-width="2"
+                  ></path>
+                  <path
+                    d="M0 100 L0 80 L10 75 L20 85 L30 60 L40 70 L50 40 L60 55 L70 30 L80 45 L90 20 L100 35 L100 100 Z"
+                    fill="#00647c"
+                    fill-opacity="0.1"
+                  ></path>
+                </svg>
+              </div>
+              <!-- Stats Grid -->
+              <div class="grid grid-cols-5 gap-sm mt-auto">
+                <div>
+                  <div
+                    class="font-label-caps text-label-caps text-secondary text-[9px]"
+                  >
+                    Avg Error
+                  </div>
+                  <div class="font-data-mono text-data-mono text-on-surface">
+                    5.2 px
+                  </div>
+                </div>
+                <div>
+                  <div
+                    class="font-label-caps text-label-caps text-secondary text-[9px]"
+                  >
+                    Max Error
+                  </div>
+                  <div class="font-data-mono text-data-mono text-on-surface">
+                    9.1 px
+                  </div>
+                </div>
+                <div>
+                  <div
+                    class="font-label-caps text-label-caps text-secondary text-[9px]"
+                  >
+                    RMSE
+                  </div>
+                  <div class="font-data-mono text-data-mono text-on-surface">
+                    5.8 px
+                  </div>
+                </div>
+                <div>
+                  <div
+                    class="font-label-caps text-label-caps text-secondary text-[9px]"
+                  >
+                    Acq Time
+                  </div>
+                  <div class="font-data-mono text-data-mono text-on-surface">
+                    1.12s
+                  </div>
+                </div>
+                <div>
+                  <div
+                    class="font-label-caps text-label-caps text-secondary text-[9px]"
+                  >
+                    Retention
+                  </div>
+                  <div class="font-data-mono text-data-mono text-on-surface">
+                    97.9%
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
