@@ -10,8 +10,3 @@ __pycache__/
 stitch_fsoc_tracking_simulator/
 *.html
 
-# Ignore other team's folders so they aren't pushed to your Python repo
-node-backend/
-react-frontend/
-
-user-defined.txt

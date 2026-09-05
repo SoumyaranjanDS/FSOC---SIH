@@ -20,10 +20,18 @@ MAX_SPEED_PX = 26  # Max Pan/Tilt speed per frame (approx 5 degrees/sec)
 # --- DYNAMIC CONFIGURATION ---
 TARGET_MAX_SPEED = 15.0
 TARGET_PATH = "Random"
+OBSTACLES_ENABLED = False
+
+NOISE_TYPE = "None"
+NOISE_STD_DEV = 20
+CAMERA_JITTER = 0
+ATMOSPHERIC = "Clear"
+PLATFORM_MOTION = "None"
 
 def stdin_listener():
     """Background thread to listen for commands from the Node Server"""
-    global TARGET_MAX_SPEED, TARGET_PATH
+    global TARGET_MAX_SPEED, TARGET_PATH, OBSTACLES_ENABLED
+    global NOISE_TYPE, NOISE_STD_DEV, CAMERA_JITTER, ATMOSPHERIC, PLATFORM_MOTION
     for line in sys.stdin:
         try:
             cmd = json.loads(line)
@@ -31,6 +39,18 @@ def stdin_listener():
                 TARGET_MAX_SPEED = float(cmd["target_speed"])
             if "target_path" in cmd:
                 TARGET_PATH = cmd["target_path"]
+            if "obstacles_enabled" in cmd:
+                OBSTACLES_ENABLED = bool(cmd["obstacles_enabled"])
+            if "noise_type" in cmd:
+                NOISE_TYPE = cmd["noise_type"]
+            if "noise_std_dev" in cmd:
+                NOISE_STD_DEV = int(cmd["noise_std_dev"])
+            if "camera_jitter" in cmd:
+                CAMERA_JITTER = int(cmd["camera_jitter"])
+            if "atmospheric" in cmd:
+                ATMOSPHERIC = cmd["atmospheric"]
+            if "platform_motion" in cmd:
+                PLATFORM_MOTION = cmd["platform_motion"]
         except Exception:
             pass
 
@@ -77,12 +97,54 @@ def main():
     # Track the previous path to detect switches
     prev_path = TARGET_PATH
     transitioning_to_center = False
+    
+    # --- PERFORMANCE METRICS TRACKING ---
+    sim_start_time = time.time()
+    locked_frames = 0
+    lost_frames = 0
+    total_error = 0
+    max_error = 0
+    acquisition_time = 0.0
+    initial_lock_achieved = False
+    
+    # Define Dynamic Obstacles (Virtual Clouds)
+    def spawn_cloud():
+        return {
+            "x": random.randint(200, WORLD_SIZE - 400),
+            "y": random.randint(200, WORLD_SIZE - 400),
+            "w": random.randint(150, 350),
+            "h": random.randint(100, 200),
+            "dx": random.uniform(-4, 4),
+            "dy": random.uniform(-4, 4),
+            "lifetime": random.randint(150, 500),
+            "active": random.random() > 0.2  # 80% chance to be active (visible)
+        }
+        
+    obstacles = [spawn_cloud() for _ in range(4)]
 
     while True:
         # --- 1. WORLD GENERATION ---
         world = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.uint8)
 
         frame_count += 1
+        
+        # --- UPDATE VIRTUAL CLOUDS ---
+        if OBSTACLES_ENABLED:
+            for i in range(len(obstacles)):
+                obs = obstacles[i]
+                obs["x"] += obs["dx"]
+                obs["y"] += obs["dy"]
+                obs["lifetime"] -= 1
+                
+                # Bounce clouds off edges
+                if obs["x"] < 0 or obs["x"] + obs["w"] > WORLD_SIZE:
+                    obs["dx"] *= -1
+                if obs["y"] < 0 or obs["y"] + obs["h"] > WORLD_SIZE:
+                    obs["dy"] *= -1
+                    
+                # Randomly vanish/respawn
+                if obs["lifetime"] <= 0:
+                    obstacles[i] = spawn_cloud()
 
         # Track path switches to reset state if needed
         if TARGET_PATH != prev_path:
@@ -264,45 +326,172 @@ def main():
         top_left = (true_x - TARGET_SIZE // 2, true_y - TARGET_SIZE // 2)
         bottom_right = (true_x + TARGET_SIZE // 2, true_y + TARGET_SIZE // 2)
         cv2.rectangle(world, top_left, bottom_right, 255, -1)
+        
+        # --- 1.5 OBSTACLE (VIRTUAL CLOUD) RENDERING ---
+        # Draw obstacles AFTER the beacon, in pure black (0)
+        # This completely erases the beacon pixels if they overlap!
+        if OBSTACLES_ENABLED:
+            for obs in obstacles:
+                if obs.get("active", True):
+                    center = (int(obs["x"] + obs["w"]/2), int(obs["y"] + obs["h"]/2))
+                    axes = (int(obs["w"]/2), int(obs["h"]/2))
+                    cv2.ellipse(world, center, axes, 0, 0, 360, 0, -1)
 
         # --- 2. VIRTUAL CAMERA (STEP 4: PTZ MOTORS) ---
+        # Saturated P-Controller
         # The camera motors try to correct the error, but they have physical speed limits!
-        # PDF: Max Pan Speed = 5 deg/s. (FOV 4 deg = 640px. So 5 deg/s = 800px/s = ~26px/frame)
-        move_x = max(-MAX_SPEED_PX, min(error_x, MAX_SPEED_PX))
-        move_y = max(-MAX_SPEED_PX, min(error_y, MAX_SPEED_PX))
+        # PDF: Max Pan Speed = 5 deg/s. (FOV 4 deg = 640px. So 5 deg/s = 800px/s)
+        # At 30 FPS, Max Speed = 800 / 30 = 26.66 px/frame.
+        MAX_MOTOR_SPEED = 26.66
+        
+        cam_dx = 0
+        cam_dy = 0
+        
+        # Deadzone: if the error is tiny, don't jitter
+        if abs(error_x) > 2: 
+            cam_dx = error_x * 0.8  # Aggressive Proportional Gain
+        if abs(error_y) > 2: 
+            cam_dy = error_y * 0.8
+        
+        # Saturated clipping to perfectly match PDF physical constraints
+        cam_dx = max(-MAX_MOTOR_SPEED, min(MAX_MOTOR_SPEED, cam_dx))
+        cam_dy = max(-MAX_MOTOR_SPEED, min(MAX_MOTOR_SPEED, cam_dy))
 
         # Apply the physical motor movement
-        cam_x += move_x
-        cam_y += move_y
+        cam_x += int(cam_dx)
+        cam_y += int(cam_dy)
+
+        # --- 2.2 PLATFORM MOTION (Camera Base Moving) ---
+        if PLATFORM_MOTION == "Linear":
+            cam_x += 5
+        elif PLATFORM_MOTION == "Circular":
+            cam_x += int(10 * math.cos(t * 2))
+            cam_y += int(10 * math.sin(t * 2))
+        elif PLATFORM_MOTION == "Random":
+            cam_x += random.randint(-15, 15)
+            cam_y += random.randint(-15, 15)
+        elif PLATFORM_MOTION == "Figure of 8":
+            cam_x += int(15 * math.cos(t * 1.5))
+            cam_y += int(15 * math.sin(t * 3.0) / 2)
+        elif PLATFORM_MOTION == "Spiral":
+            cam_x += int((t * 2) * math.cos(t * 2))
+            cam_y += int((t * 2) * math.sin(t * 2))
 
         # Ensure camera doesn't slice out of bounds (edge collision)
         cam_x = max(0, min(cam_x, WORLD_SIZE - CAM_WIDTH))
         cam_y = max(0, min(cam_y, WORLD_SIZE - CAM_HEIGHT))
 
         # --- 2.5 DISTURBANCE ENGINE (STEP 5) ---
-        # (Disabled by user request for clear visualization)
+        
+        # 1. Camera Jitter (Random micro-vibrations in the viewport slice)
+        jitter_x = random.randint(-CAMERA_JITTER, CAMERA_JITTER) if CAMERA_JITTER > 0 else 0
+        jitter_y = random.randint(-CAMERA_JITTER, CAMERA_JITTER) if CAMERA_JITTER > 0 else 0
+        
+        view_x = max(0, min(cam_x + jitter_x, WORLD_SIZE - CAM_WIDTH))
+        view_y = max(0, min(cam_y + jitter_y, WORLD_SIZE - CAM_HEIGHT))
+        
         camera_feed = world[
-            cam_y : cam_y + CAM_HEIGHT, cam_x : cam_x + CAM_WIDTH
+            view_y : view_y + CAM_HEIGHT, view_x : view_x + CAM_WIDTH
         ].copy()
+
+        # 2. Atmospheric Disturbance
+        if ATMOSPHERIC != "Clear":
+            if ATMOSPHERIC == "Haze":
+                haze = np.full_like(camera_feed, 200)
+                camera_feed = cv2.addWeighted(camera_feed, 0.75, haze, 0.25, 0)
+            elif ATMOSPHERIC == "Fog":
+                fog = np.full_like(camera_feed, 230)
+                camera_feed = cv2.addWeighted(camera_feed, 0.4, fog, 0.6, 0)
+            elif ATMOSPHERIC == "Low light":
+                camera_feed = cv2.convertScaleAbs(camera_feed, alpha=0.3, beta=0)
+            elif ATMOSPHERIC == "Rain":
+                # Draw random translucent angled lines to simulate rain
+                rain_overlay = camera_feed.copy()
+                for _ in range(100):
+                    rx = random.randint(-50, CAM_WIDTH + 50)
+                    ry = random.randint(-50, CAM_HEIGHT + 50)
+                    cv2.line(rain_overlay, (rx, ry), (rx - 10, ry + 30), (150, 150, 150), 1)
+                camera_feed = cv2.addWeighted(rain_overlay, 0.4, camera_feed, 0.6, 0)
+
+        # 3. Image Noise
+        if NOISE_TYPE != "None":
+            if NOISE_TYPE == "Salt & Pepper":
+                prob = NOISE_STD_DEV / 200.0  # e.g., 20/200 = 10%
+                rnd = np.random.rand(CAM_HEIGHT, CAM_WIDTH)
+                camera_feed[rnd < (prob / 2)] = 0
+                camera_feed[rnd > 1 - (prob / 2)] = 255
+            elif NOISE_TYPE == "Gaussian":
+                gauss = np.random.normal(0, NOISE_STD_DEV, (CAM_HEIGHT, CAM_WIDTH)).astype(np.float32)
+                noisy = np.clip(camera_feed.astype(np.float32) + gauss, 0, 255).astype(np.uint8)
+                camera_feed = noisy
+            elif NOISE_TYPE == "Poisson":
+                # Poisson noise is dependent on pixel intensity. Scale by std dev.
+                noisy = np.random.poisson(camera_feed.astype(np.float32) / (NOISE_STD_DEV + 1)) * (NOISE_STD_DEV + 1)
+                camera_feed = np.clip(noisy, 0, 255).astype(np.uint8)
 
         # --- 3. COMPUTER VISION TRACKER (AI SERVICE) ---
         # The AI doesn't know it's a simulation. It just takes an image and camera encoder positions.
+        # We pass the obstacle positions so the tracker can find where the target will exit the cloud.
+        active_obs_for_tracker = [
+            {"x": int(o["x"]), "y": int(o["y"]), "w": int(o["w"]), "h": int(o["h"])}
+            for o in obstacles if o.get("active", True)
+        ] if OBSTACLES_ENABLED else []
+        
         error_x, error_y, rmse, status_str, log_msg = tracker.update(
-            camera_feed, cam_x, cam_y
+            camera_feed, cam_x, cam_y, current_path=TARGET_PATH, obstacles=active_obs_for_tracker
         )
 
+        # --- UPDATE PERFORMANCE METRICS ---
+        total_error += rmse
+        if rmse > max_error:
+            max_error = rmse
+            
+        if status_str in ["TRACKING", "DISTURBED", "ACQUIRING"]:
+            locked_frames += 1
+            if not initial_lock_achieved:
+                acquisition_time = time.time() - sim_start_time
+                initial_lock_achieved = True
+        else:
+            lost_frames += 1
+
+        avg_error = total_error / frame_count
+        lock_retention_rate = (locked_frames / (locked_frames + lost_frames)) * 100 if (locked_frames + lost_frames) > 0 else 0
+        current_fps = frame_count / (time.time() - sim_start_time) if time.time() - sim_start_time > 0 else FPS
+        
         # --- 4. TELEMETRY OUTPUT (STEP 6) ---
         # Package the data as JSON and print it to stdout for the Node server to catch
+        active_obstacles = [
+            {"x": int(o["x"]), "y": int(o["y"]), "w": int(o["w"]), "h": int(o["h"])}
+            for o in obstacles if o.get("active", True)
+        ]
+        
         telemetry = {
             "target": {"x": true_x, "y": true_y},
             "camera": {"x": cam_x, "y": cam_y},
             "error": {"x": error_x, "y": error_y, "rmse": rmse},
             "status": status_str,
+            "obstacles": active_obstacles if OBSTACLES_ENABLED else [],
+            "performance": {
+                "duration": time.time() - sim_start_time,
+                "fps": current_fps,
+                "acquisition_time": acquisition_time,
+                "avg_error": avg_error,
+                "max_error": max_error,
+                "lock_retention_rate": lock_retention_rate
+            }
         }
 
         # If Kalman Coasting is active, include the prediction for the UI
         if status_str == "KALMAN COASTING":
             telemetry["coasting_coord"] = {"x": int(tracker.kf.statePre[0, 0]), "y": int(tracker.kf.statePre[1, 0])}
+            
+            # Send the remaining LSTM predicted path for the UI to draw!
+            if hasattr(tracker, "lstm_sequence") and tracker.lstm_sequence:
+                telemetry["predicted_path"] = [{"x": int(p[0]), "y": int(p[1])} for p in tracker.lstm_sequence[:50]]
+            
+            # Send re-acquisition point if active
+            if hasattr(tracker, "reacq_point") and tracker.reacq_point:
+                telemetry["reacq_point"] = {"x": int(tracker.reacq_point[0]), "y": int(tracker.reacq_point[1])}
 
         # If the AI produced a text log, send it to the UI!
         if log_msg:
