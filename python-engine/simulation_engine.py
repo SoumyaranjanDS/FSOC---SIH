@@ -209,41 +209,25 @@ def main():
                 spiral_dir = 1.0   # Hit center, spiral outwards again
                 
         elif TARGET_PATH == "Circular":
-            # Smart Circle Physics (Dynamic Breathing Radius + Edge Sliding)
-            if circle_R < target_circle_R:
-                circle_R = min(circle_R + 1.0, target_circle_R)
-            elif circle_R > target_circle_R:
-                circle_R = max(circle_R - 1.0, target_circle_R)
+            # Fixed Circle Physics
+            circle_R = 400.0
                 
-            omega = TARGET_MAX_SPEED / max(circle_R, 10.0)
-            
-            old_phase = t_phase
+            omega = TARGET_MAX_SPEED / circle_R
             t_phase += omega
-            # Check for a full 360 rotation
-            if int(old_phase / (2*math.pi)) < int(t_phase / (2*math.pi)):
-                if not circle_hit_edge:
-                    target_circle_R += 100.0  # Grow!
-                else:
-                    target_circle_R = max(100.0, target_circle_R - 50.0)  # Shrink!
-                circle_hit_edge = False
             
             proposed_x = circle_cx + math.cos(t_phase) * circle_R
             proposed_y = circle_cy + math.sin(t_phase) * circle_R
             
-            # Smooth Edge Sliding
+            # Smooth Edge Sliding without changing radius
             if proposed_x < 100:
                 circle_cx += (100 - proposed_x)
-                circle_hit_edge = True
             elif proposed_x > WORLD_SIZE - 100:
                 circle_cx -= (proposed_x - (WORLD_SIZE - 100))
-                circle_hit_edge = True
                 
             if proposed_y < 100:
                 circle_cy += (100 - proposed_y)
-                circle_hit_edge = True
             elif proposed_y > WORLD_SIZE - 100:
                 circle_cy -= (proposed_y - (WORLD_SIZE - 100))
-                circle_hit_edge = True
                 
             t_x = circle_cx + math.cos(t_phase) * circle_R
             t_y = circle_cy + math.sin(t_phase) * circle_R
