@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 
@@ -85,6 +85,8 @@ function App() {
     }
   };
 
+  const rmseCanvasRef = useRef(null);
+
   useEffect(() => {
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
@@ -97,8 +99,84 @@ function App() {
             ...prev,
             `[${new Date().toLocaleTimeString()}] ${data.log}`,
           ];
-          return newLogs.slice(-20); // Keep only the last 20 logs
+          return newLogs.slice(-20);
         });
+      }
+      // Draw RMSE error graph on canvas
+      if (data.rmse_history && rmseCanvasRef.current) {
+        const canvas = rmseCanvasRef.current;
+        const ctx = canvas.getContext("2d");
+        const W = canvas.width;
+        const H = canvas.height;
+        const history = data.rmse_history;
+        const maxVal = Math.max(...history, 50); // at least 50px scale
+
+        ctx.clearRect(0, 0, W, H);
+
+        // Background
+        ctx.fillStyle = "#0a0a0a";
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid lines
+        ctx.strokeStyle = "#1a1a1a";
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = (H / 4) * i;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(W, y);
+          ctx.stroke();
+          // Y-axis label
+          ctx.fillStyle = "#555";
+          ctx.font = "9px monospace";
+          ctx.fillText(Math.round(maxVal - (maxVal / 4) * i) + "px", 2, y + 10);
+        }
+
+        // Current RMSE label
+        const cur = history[history.length - 1] || 0;
+        const avg = history.reduce((a, b) => a + b, 0) / history.length;
+
+        // Fill area under graph
+        ctx.beginPath();
+        history.forEach((v, i) => {
+          const x = (i / (history.length - 1 || 1)) * W;
+          const y = H - (v / maxVal) * H;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.lineTo(W, H);
+        ctx.lineTo(0, H);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, "rgba(255,80,80,0.25)");
+        grad.addColorStop(1, "rgba(255,80,80,0.02)");
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Line
+        ctx.beginPath();
+        ctx.strokeStyle =
+          cur > 100 ? "#ff4444" : cur > 30 ? "#ffaa00" : "#00ff88";
+        ctx.lineWidth = 1.5;
+        history.forEach((v, i) => {
+          const x = (i / (history.length - 1 || 1)) * W;
+          const y = H - (v / maxVal) * H;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Current value dot
+        const lastX = W;
+        const lastY = H - (cur / maxVal) * H;
+        ctx.beginPath();
+        ctx.arc(lastX - 2, lastY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+
+        // Stats
+        ctx.fillStyle = "#aaa";
+        ctx.font = "9px monospace";
+        ctx.fillText(`NOW: ${cur.toFixed(1)}px`, 4, H - 18);
+        ctx.fillText(`AVG: ${avg.toFixed(1)}px`, 4, H - 7);
       }
     });
 
@@ -345,7 +423,10 @@ function App() {
                 marginTop: "10px",
               }}
             >
-              <span>Target Path Profile:</span>
+              <span style={{ fontWeight: "bold" }}>Target Path Profile</span>
+              <span style={{ color: "#888", fontSize: "10px" }}>
+                beacon movement
+              </span>
             </label>
             <select
               value={targetPath}
@@ -377,23 +458,23 @@ function App() {
               <span>Target Speed (px/frame):</span>
               <span
                 style={{
-                  color: targetSpeed > 26 ? "#f00" : "#0f0",
+                  color: targetSpeed > 2 ? "#f00" : "#0f0",
                   fontWeight: "bold",
                 }}
               >
-                {targetSpeed} {targetSpeed > 26 && " (ESCAPING)"}
+                {targetSpeed} {targetSpeed > 2 && " (ESCAPING)"}
               </span>
             </label>
             <input
               type="range"
               min="1"
-              max="40"
+              max="35"
               value={targetSpeed}
               onChange={handleSpeedChange}
               style={{
                 width: "100%",
                 cursor: "pointer",
-                accentColor: targetSpeed > 26 ? "#f00" : "#0f0",
+                accentColor: targetSpeed > 2 ? "#f00" : "#0f0",
               }}
             />
 
@@ -510,7 +591,10 @@ function App() {
                 marginTop: "5px",
               }}
             >
-              <span>Platform Motion:</span>
+              <span style={{ fontWeight: "bold" }}>Platform Motion</span>
+              <span style={{ color: "#888", fontSize: "10px" }}>
+                camera base drift
+              </span>
             </label>
             <select
               value={platformMotion}
@@ -525,12 +609,12 @@ function App() {
                 fontSize: "12px",
               }}
             >
-              <option value="None">None</option>
-              <option value="Linear">Linear</option>
-              <option value="Circular">Circular</option>
-              <option value="Random">Random</option>
-              <option value="Figure of 8">Figure of 8</option>
-              <option value="Spiral">Spiral</option>
+              <option value="None">None (Stable Platform)</option>
+              <option value="Linear">Linear Drift</option>
+              <option value="Circular">Circular Sway</option>
+              <option value="Random">Random Shake</option>
+              <option value="Figure of 8">Figure-8 Sway</option>
+              <option value="Spiral">Spiral Drift</option>
             </select>
           </div>
         </div>
@@ -580,12 +664,16 @@ function App() {
             logs.map((log, i) => (
               <span
                 key={i}
-                style={{ 
-                  color: log.includes("LOST") ? "#f00" 
-                       : log.includes("DISTURBED") ? "#ffaa00" 
-                       : log.includes("REACQUIRING") ? "#ff00ff"
-                       : log.includes("ACQUIRING") ? "#00aaff"
-                       : "#0f0" 
+                style={{
+                  color: log.includes("LOST")
+                    ? "#f00"
+                    : log.includes("DISTURBED")
+                      ? "#ffaa00"
+                      : log.includes("REACQUIRING")
+                        ? "#ff00ff"
+                        : log.includes("ACQUIRING")
+                          ? "#00aaff"
+                          : "#0f0",
                 }}
               >
                 {log}
@@ -620,64 +708,229 @@ function App() {
             color: "#00aaff",
             fontSize: "14px",
             display: "flex",
-            justifyContent: "space-between"
+            justifyContent: "space-between",
           }}
         >
           <span>Live Performance Report</span>
-          <span style={{color: "#0f0"}}>{telemetry?.performance?.fps?.toFixed(1) || "0.0"} FPS</span>
+          <span style={{ color: "#0f0" }}>
+            {telemetry?.performance?.fps?.toFixed(1) || "0.0"} FPS
+          </span>
         </h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
-          
-          <div style={{ background: "#111", padding: "8px", borderRadius: "4px", border: "1px solid #222" }}>
-            <div style={{ color: "#888", marginBottom: "4px" }}>Simulation Time</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "10px",
+            fontSize: "12px",
+          }}
+        >
+          <div
+            style={{
+              background: "#111",
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #222",
+            }}
+          >
+            <div style={{ color: "#888", marginBottom: "4px" }}>
+              Simulation Time
+            </div>
             <div style={{ fontSize: "16px", color: "#fff" }}>
-              {telemetry?.performance?.duration ? new Date(telemetry.performance.duration * 1000).toISOString().substr(14, 5) : "00:00"}
+              {telemetry?.performance?.duration
+                ? new Date(telemetry.performance.duration * 1000)
+                    .toISOString()
+                    .substr(14, 5)
+                : "00:00"}
             </div>
           </div>
 
-          <div style={{ background: "#111", padding: "8px", borderRadius: "4px", border: "1px solid #222" }}>
-            <div style={{ color: "#888", marginBottom: "4px" }}>Acquisition Time</div>
-            <div style={{ fontSize: "16px", color: telemetry?.performance?.acquisition_time > 0 ? "#0f0" : "#888" }}>
-              {telemetry?.performance?.acquisition_time ? telemetry.performance.acquisition_time.toFixed(2) + " s" : "Waiting..."}
+          <div
+            style={{
+              background: "#111",
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #222",
+            }}
+          >
+            <div style={{ color: "#888", marginBottom: "4px" }}>
+              Acquisition Time
+            </div>
+            <div
+              style={{
+                fontSize: "16px",
+                color:
+                  telemetry?.performance?.acquisition_time > 0
+                    ? "#0f0"
+                    : "#888",
+              }}
+            >
+              {telemetry?.performance?.acquisition_time
+                ? telemetry.performance.acquisition_time.toFixed(2) + " s"
+                : "Waiting..."}
             </div>
           </div>
 
-          <div style={{ background: "#111", padding: "8px", borderRadius: "4px", border: "1px solid #222" }}>
-            <div style={{ color: "#888", marginBottom: "4px" }}>Avg Tracking Error</div>
-            <div style={{ fontSize: "16px", color: telemetry?.performance?.avg_error > 10 ? "#f00" : "#0f0" }}>
-              {telemetry?.performance?.avg_error ? telemetry.performance.avg_error.toFixed(2) + " px" : "0.00 px"}
+          <div
+            style={{
+              background: "#111",
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #222",
+            }}
+          >
+            <div style={{ color: "#888", marginBottom: "4px" }}>
+              Avg Tracking Error
+            </div>
+            <div
+              style={{
+                fontSize: "16px",
+                color: telemetry?.performance?.avg_error > 10 ? "#f00" : "#0f0",
+              }}
+            >
+              {telemetry?.performance?.avg_error
+                ? telemetry.performance.avg_error.toFixed(2) + " px"
+                : "0.00 px"}
             </div>
           </div>
 
-          <div style={{ background: "#111", padding: "8px", borderRadius: "4px", border: "1px solid #222" }}>
-            <div style={{ color: "#888", marginBottom: "4px" }}>Max Tracking Error</div>
+          <div
+            style={{
+              background: "#111",
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #222",
+            }}
+          >
+            <div style={{ color: "#888", marginBottom: "4px" }}>
+              Max Tracking Error
+            </div>
             <div style={{ fontSize: "16px", color: "#ffaa00" }}>
-              {telemetry?.performance?.max_error ? telemetry.performance.max_error.toFixed(2) + " px" : "0.00 px"}
+              {telemetry?.performance?.max_error
+                ? telemetry.performance.max_error.toFixed(2) + " px"
+                : "0.00 px"}
             </div>
           </div>
 
-          <div style={{ gridColumn: "span 2", background: "#111", padding: "8px", borderRadius: "4px", border: "1px solid #222" }}>
-            <div style={{ color: "#888", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+          <div
+            style={{
+              gridColumn: "span 2",
+              background: "#111",
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #222",
+            }}
+          >
+            <div
+              style={{
+                color: "#888",
+                marginBottom: "4px",
+                display: "flex",
+                justifyContent: "space-between",
+              }}
+            >
               <span>Lock Retention Rate</span>
-              <span style={{ color: telemetry?.performance?.lock_retention_rate > 95 ? "#0f0" : "#f00" }}>
-                {telemetry?.performance?.lock_retention_rate ? telemetry.performance.lock_retention_rate.toFixed(1) + "%" : "100.0%"}
+              <span
+                style={{
+                  color:
+                    telemetry?.performance?.lock_retention_rate > 95
+                      ? "#0f0"
+                      : "#f00",
+                }}
+              >
+                {telemetry?.performance?.lock_retention_rate
+                  ? telemetry.performance.lock_retention_rate.toFixed(1) + "%"
+                  : "100.0%"}
               </span>
             </div>
             {/* Progress Bar */}
-            <div style={{ width: "100%", height: "4px", background: "#333", borderRadius: "2px", overflow: "hidden", marginTop: "4px" }}>
-              <div style={{ 
-                width: `${telemetry?.performance?.lock_retention_rate || 100}%`, 
-                height: "100%", 
-                background: (telemetry?.performance?.lock_retention_rate || 100) > 95 ? "#0f0" : "#f00",
-                transition: "width 0.2s, background 0.2s"
-              }} />
+            <div
+              style={{
+                width: "100%",
+                height: "4px",
+                background: "#333",
+                borderRadius: "2px",
+                overflow: "hidden",
+                marginTop: "4px",
+              }}
+            >
+              <div
+                style={{
+                  width: `${telemetry?.performance?.lock_retention_rate || 100}%`,
+                  height: "100%",
+                  background:
+                    (telemetry?.performance?.lock_retention_rate || 100) > 95
+                      ? "#0f0"
+                      : "#f00",
+                  transition: "width 0.2s, background 0.2s",
+                }}
+              />
             </div>
           </div>
-
         </div>
       </div>
 
-      {/* 2. SCROLLABLE 2000x2000 GRAPH VIEWER */}
+      {/* 1.7 RMSE ERROR GRAPH (Right Side HUD) */}
+      <div
+        style={{
+          position: "fixed",
+          top: 660,
+          right: 20,
+          zIndex: 1000,
+          background: "rgba(5, 5, 5, 0.9)",
+          border: "1px solid #333",
+          padding: "10px 15px 10px 15px",
+          borderRadius: "8px",
+          color: "#fff",
+          width: "400px",
+          backdropFilter: "blur(5px)",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "6px",
+          }}
+        >
+          <span
+            style={{ fontSize: "12px", color: "#00aaff", fontWeight: "bold" }}
+          >
+            Tracking Error (RMSE)
+          </span>
+          <span
+            style={{
+              fontSize: "11px",
+              padding: "2px 6px",
+              borderRadius: "3px",
+              background:
+                telemetry?.env_mode && telemetry.env_mode !== "Clear"
+                  ? "#1a0010"
+                  : "#001a00",
+              color:
+                telemetry?.env_mode && telemetry.env_mode !== "Clear"
+                  ? "#ff6688"
+                  : "#00ff88",
+              border: `1px solid ${telemetry?.env_mode && telemetry.env_mode !== "Clear" ? "#ff3366" : "#00ff44"}`,
+            }}
+          >
+            {telemetry?.env_mode || "CLEAR"}
+          </span>
+        </div>
+        <canvas
+          ref={rmseCanvasRef}
+          width={370}
+          height={90}
+          style={{
+            display: "block",
+            width: "100%",
+            borderRadius: "4px",
+            border: "1px solid #1a1a1a",
+          }}
+        />
+      </div>
+
       <div
         style={{
           width: "100%",
@@ -755,12 +1008,12 @@ function App() {
                       atmospheric === "Haze"
                         ? "rgba(200, 200, 200, 0.5)"
                         : atmospheric === "Fog"
-                        ? "radial-gradient(circle at center, rgba(255,255,255,0.6) 0%, rgba(200,200,200,0.9) 100%)"
-                        : atmospheric === "Low light"
-                        ? "rgba(0, 0, 0, 0.75)"
-                        : atmospheric === "Rain"
-                        ? "repeating-linear-gradient(105deg, transparent, transparent 10px, rgba(255,255,255,0.3) 10px, rgba(255,255,255,0.3) 12px)"
-                        : "transparent",
+                          ? "radial-gradient(circle at center, rgba(255,255,255,0.6) 0%, rgba(200,200,200,0.9) 100%)"
+                          : atmospheric === "Low light"
+                            ? "rgba(0, 0, 0, 0.75)"
+                            : atmospheric === "Rain"
+                              ? "repeating-linear-gradient(105deg, transparent, transparent 10px, rgba(255,255,255,0.3) 10px, rgba(255,255,255,0.3) 12px)"
+                              : "transparent",
                     transition: "background 0.5s ease",
                   }}
                 />
@@ -777,11 +1030,12 @@ function App() {
                     height: "480px",
                     pointerEvents: "none",
                     zIndex: 4, // Below atmospheric, but above the camera lines
-                    background: noiseType === "Salt & Pepper"
-                        ? "url('data:image/svg+xml;utf8,<svg viewBox=\"0 0 200 200\" xmlns=\"http://www.w3.org/2000/svg\"><filter id=\"noiseFilter\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.95\" numOctaves=\"3\" stitchTiles=\"stitch\"/></filter><rect width=\"100%\" height=\"100%\" filter=\"url(%23noiseFilter)\" opacity=\"0.5\"/></svg>')"
+                    background:
+                      noiseType === "Salt & Pepper"
+                        ? 'url(\'data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23noiseFilter)" opacity="0.5"/></svg>\')'
                         : noiseType === "Gaussian"
-                        ? "url('data:image/svg+xml;utf8,<svg viewBox=\"0 0 200 200\" xmlns=\"http://www.w3.org/2000/svg\"><filter id=\"noiseFilter\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.6\" numOctaves=\"3\" stitchTiles=\"stitch\"/></filter><rect width=\"100%\" height=\"100%\" filter=\"url(%23noiseFilter)\" opacity=\"0.3\"/></svg>')"
-                        : "url('data:image/svg+xml;utf8,<svg viewBox=\"0 0 200 200\" xmlns=\"http://www.w3.org/2000/svg\"><filter id=\"noiseFilter\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"2.0\" numOctaves=\"1\" stitchTiles=\"stitch\"/></filter><rect width=\"100%\" height=\"100%\" filter=\"url(%23noiseFilter)\" opacity=\"0.4\"/></svg>')",
+                          ? 'url(\'data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23noiseFilter)" opacity="0.3"/></svg>\')'
+                          : 'url(\'data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="2.0" numOctaves="1" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23noiseFilter)" opacity="0.4"/></svg>\')',
                     mixBlendMode: "screen",
                   }}
                 />
