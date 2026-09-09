@@ -10,6 +10,20 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [engineStatus, setEngineStatus] = useState("stopped");
 
+  // Benchmark Mode States
+  const [operatingMode, setOperatingModeState] = useState("simulation"); // 'simulation' | 'benchmark'
+  const operatingModeRef = useRef("simulation");
+  
+  const setOperatingMode = (mode) => {
+    setOperatingModeState(mode);
+    operatingModeRef.current = mode;
+    setTelemetry(null);
+    setLogs([]);
+  };
+  const [benchmarkFile, setBenchmarkFile] = useState(null);
+  const [benchmarkSummary, setBenchmarkSummary] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+
   // Control Panel States
   const [targetSpeed, setTargetSpeed] = useState(15);
   const [targetPath, setTargetPath] = useState("Random");
@@ -86,12 +100,17 @@ function App() {
   };
 
   const rmseCanvasRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
     socket.on("engine_status", (status) => setEngineStatus(status));
     socket.on("telemetry", (data) => {
+      // Ignore telemetry from the inactive mode
+      if (operatingModeRef.current === "benchmark" && data.mode !== "benchmark") return;
+      if (operatingModeRef.current === "simulation" && data.mode === "benchmark") return;
+
       setTelemetry(data);
       if (data.log) {
         setLogs((prev) => {
@@ -180,13 +199,74 @@ function App() {
       }
     });
 
+    socket.on("benchmark_complete", (data) => {
+      setEngineStatus("stopped");
+      setBenchmarkSummary(data.summary);
+      if (videoRef.current) videoRef.current.pause();
+    });
+
     return () => {
       socket.off("connect");
       socket.off("disconnect");
       socket.off("engine_status");
       socket.off("telemetry");
+      socket.off("benchmark_complete");
     };
   }, []);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("video", file);
+
+    try {
+      const res = await fetch("http://localhost:3000/upload_video", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      setBenchmarkFile(data);
+    } catch (err) {
+      console.error("Upload failed", err);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const startBenchmark = () => {
+    if (benchmarkFile) {
+      setBenchmarkSummary(null);
+      setTelemetry((prev) => (prev?.video ? { video: prev.video } : null));
+      setLogs([]);
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play();
+      }
+      socket.emit("start_benchmark", { video_path: benchmarkFile.path });
+      
+      // Sync UI config state to python engine after it boots
+      setTimeout(() => {
+        socket.emit("set_config", {
+          target_speed: targetSpeed,
+          target_path: targetPath,
+          obstacles_enabled: obstaclesEnabled,
+          noise_type: noiseType,
+          noise_std_dev: noiseStdDev,
+          camera_jitter: cameraJitter,
+          atmospheric: atmospheric,
+          platform_motion: platformMotion,
+        });
+      }, 500);
+    }
+  };
+
+  const stopBenchmark = () => {
+    if (videoRef.current) videoRef.current.pause();
+    socket.emit("stop_benchmark");
+  };
 
   // Safely extract coordinates if telemetry exists
   const targetX = telemetry?.target?.x || 0;
@@ -232,57 +312,214 @@ function App() {
           FSOC Optical Testbed
         </h2>
 
-        {/* ENGINE CONTROLS */}
+        {/* MODE TOGGLE */}
         <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
           <button
-            onClick={() => sendEngineCommand("start")}
-            disabled={engineStatus === "running"}
+            onClick={() => setOperatingMode("simulation")}
             style={{
               flex: 1,
               padding: "8px",
-              background: engineStatus === "running" ? "#222" : "#166534",
+              background: operatingMode === "simulation" ? "#166534" : "#222",
               color: "#fff",
-              border: "none",
+              border: "1px solid #444",
               borderRadius: "4px",
               cursor: "pointer",
             }}
           >
-            START
+            🔬 SIMULATION
           </button>
           <button
-            onClick={() => sendEngineCommand("stop")}
-            disabled={engineStatus === "stopped"}
+            onClick={() => setOperatingMode("benchmark")}
             style={{
               flex: 1,
               padding: "8px",
-              background: engineStatus === "stopped" ? "#222" : "#991b1b",
+              background: operatingMode === "benchmark" ? "#1d4ed8" : "#222",
               color: "#fff",
-              border: "none",
+              border: "1px solid #444",
               borderRadius: "4px",
               cursor: "pointer",
             }}
           >
-            STOP
-          </button>
-          <button
-            onClick={() => sendEngineCommand("restart")}
-            style={{
-              flex: 1,
-              padding: "8px",
-              background: "#b45309",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            RESTART
+            🎬 BENCHMARK
           </button>
         </div>
 
+        {operatingMode === "benchmark" ? (
+          <div
+            style={{
+              marginBottom: "15px",
+              padding: "10px",
+              background: "#111",
+              border: "1px solid #333",
+              borderRadius: "6px",
+            }}
+          >
+            <h3 style={{ margin: "0 0 10px 0", color: "#60a5fa" }}>
+              Benchmark Panel
+            </h3>
+            <input
+              type="file"
+              accept="video/mp4,video/x-m4v,video/*"
+              onChange={handleFileUpload}
+              style={{ marginBottom: "10px", width: "100%" }}
+            />
+            {isUploading && (
+              <div style={{ color: "#aaa", marginBottom: "10px" }}>
+                Uploading...
+              </div>
+            )}
+            {benchmarkFile && (
+              <div style={{ color: "#0f0", marginBottom: "10px" }}>
+                {benchmarkFile.filename} ✓
+              </div>
+            )}
+
+            {telemetry?.mode === "benchmark" && (
+              <div style={{ marginBottom: "10px" }}>
+                <div
+                  style={{
+                    color: "#aaa",
+                    fontSize: "12px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Frame: {telemetry.frame} / {telemetry.total_frames}
+                </div>
+                <div
+                  style={{
+                    width: "100%",
+                    height: "8px",
+                    background: "#333",
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${telemetry.progress * 100}%`,
+                      height: "100%",
+                      background: "#3b82f6",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+              <button
+                onClick={startBenchmark}
+                disabled={
+                  !benchmarkFile || engineStatus === "running_benchmark"
+                }
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  background:
+                    engineStatus === "running_benchmark" || !benchmarkFile
+                      ? "#222"
+                      : "#1d4ed8",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                START
+              </button>
+              <button
+                onClick={stopBenchmark}
+                disabled={engineStatus !== "running_benchmark"}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  background:
+                    engineStatus !== "running_benchmark" ? "#222" : "#991b1b",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                STOP
+              </button>
+              <button
+                onClick={() => {
+                  stopBenchmark();
+                  setBenchmarkSummary(null);
+                  setTelemetry((prev) => (prev?.video ? { video: prev.video } : null));
+                  if (videoRef.current) {
+                    videoRef.current.currentTime = 0;
+                  }
+                }}
+                disabled={engineStatus === "running_benchmark" || !benchmarkFile}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  background: engineStatus === "running_benchmark" || !benchmarkFile ? "#222" : "#b45309",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                RESET
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ENGINE CONTROLS */
+          <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
+            <button
+              onClick={() => sendEngineCommand("start")}
+              disabled={engineStatus === "running"}
+              style={{
+                flex: 1,
+                padding: "8px",
+                background: engineStatus === "running" ? "#222" : "#166534",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              START
+            </button>
+            <button
+              onClick={() => sendEngineCommand("stop")}
+              disabled={engineStatus === "stopped"}
+              style={{
+                flex: 1,
+                padding: "8px",
+                background: engineStatus === "stopped" ? "#222" : "#991b1b",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              STOP
+            </button>
+            <button
+              onClick={() => sendEngineCommand("restart")}
+              style={{
+                flex: 1,
+                padding: "8px",
+                background: "#b45309",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              RESTART
+            </button>
+          </div>
+        )}
+
         <div>Bridge: {connected ? "🟢 ONLINE" : "🔴 OFFLINE"}</div>
         <div>
-          Engine: {engineStatus === "running" ? "🟢 RUNNING" : "🔴 STOPPED"}
+          Engine:{" "}
+          {engineStatus.includes("running") ? "🟢 RUNNING" : "🔴 STOPPED"}
         </div>
         <div>
           Tracking:{" "}
@@ -386,97 +623,105 @@ function App() {
               }}
             />
 
-            <label
-              style={{
-                fontSize: "12px",
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                marginTop: "15px",
-                padding: "8px",
-                background: "rgba(255, 255, 255, 0.05)",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={obstaclesEnabled}
-                onChange={handleObstaclesChange}
-                style={{ width: "16px", height: "16px", cursor: "pointer" }}
-              />
-              <span
+            {operatingMode === "simulation" && (
+              <label
                 style={{
-                  fontWeight: "bold",
-                  color: obstaclesEnabled ? "#fff" : "#888",
+                  fontSize: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginTop: "15px",
+                  padding: "8px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  borderRadius: "4px",
+                  cursor: "pointer",
                 }}
               >
-                Enable Virtual Clouds (Obstacles)
-              </span>
-            </label>
+                <input
+                  type="checkbox"
+                  checked={obstaclesEnabled}
+                  onChange={handleObstaclesChange}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span
+                  style={{
+                    fontWeight: "bold",
+                    color: obstaclesEnabled ? "#fff" : "#555",
+                  }}
+                >
+                  Enable Virtual Clouds (Obstacles)
+                </span>
+              </label>
+            )}
 
-            <label
-              style={{
-                fontSize: "12px",
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "10px",
-              }}
-            >
-              <span style={{ fontWeight: "bold" }}>Target Path Profile</span>
-              <span style={{ color: "#888", fontSize: "10px" }}>
-                beacon movement
-              </span>
-            </label>
-            <select
-              value={targetPath}
-              onChange={handlePathChange}
-              style={{
-                width: "100%",
-                padding: "5px",
-                background: "#222",
-                color: "#0f0",
-                border: "1px solid #333",
-                cursor: "pointer",
-              }}
-            >
-              <option value="Random">Random (Smooth Inertia)</option>
-              <option value="Straight Line">Straight Line</option>
-              <option value="Circular">Circular</option>
-              <option value="Figure of 8">Figure of 8</option>
-              <option value="Spiral">Spiral</option>
-              <option value="Sinusoidal">Sinusoidal</option>
-            </select>
-            <label
-              style={{
-                fontSize: "12px",
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "10px",
-              }}
-            >
-              <span>Target Speed (px/frame):</span>
-              <span
-                style={{
-                  color: targetSpeed > 2 ? "#f00" : "#0f0",
-                  fontWeight: "bold",
-                }}
-              >
-                {targetSpeed} {targetSpeed > 2 && " (ESCAPING)"}
-              </span>
-            </label>
-            <input
-              type="range"
-              min="1"
-              max="35"
-              value={targetSpeed}
-              onChange={handleSpeedChange}
-              style={{
-                width: "100%",
-                cursor: "pointer",
-                accentColor: targetSpeed > 2 ? "#f00" : "#0f0",
-              }}
-            />
+            {operatingMode === "simulation" && (
+              <>
+                <label
+                  style={{
+                    fontSize: "12px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: "10px",
+                  }}
+                >
+                  <span style={{ fontWeight: "bold" }}>
+                    Target Path Profile
+                  </span>
+                  <span style={{ color: "#888", fontSize: "10px" }}>
+                    beacon movement
+                  </span>
+                </label>
+                <select
+                  value={targetPath}
+                  onChange={handlePathChange}
+                  style={{
+                    width: "100%",
+                    padding: "5px",
+                    background: "#222",
+                    color: "#0f0",
+                    border: "1px solid #333",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="Random">Random (Smooth Inertia)</option>
+                  <option value="Straight Line">Straight Line</option>
+                  <option value="Circular">Circular</option>
+                  <option value="Figure of 8">Figure of 8</option>
+                  <option value="Spiral">Spiral</option>
+                  <option value="Sinusoidal">Sinusoidal</option>
+                </select>
+                <label
+                  style={{
+                    fontSize: "12px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: "10px",
+                  }}
+                >
+                  <span>Target Speed (px/frame):</span>
+                  <span
+                    style={{
+                      color: targetSpeed > 2 ? "#f00" : "#0f0",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {targetSpeed} {targetSpeed > 2 && " (ESCAPING)"}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="35"
+                  value={targetSpeed}
+                  onChange={handleSpeedChange}
+                  style={{
+                    width: "100%",
+                    cursor: "pointer",
+                    accentColor: targetSpeed > 2 ? "#f00" : "#0f0",
+                  }}
+                />
+              </>
+            )}
 
             <div
               style={{
@@ -491,131 +736,141 @@ function App() {
               DISTURBANCES & NOISE
             </div>
 
-            <label
-              style={{
-                fontSize: "11px",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>Atmospheric Condition:</span>
-            </label>
-            <select
-              value={atmospheric}
-              onChange={handleAtmosphericChange}
-              style={{
-                width: "100%",
-                padding: "4px",
-                background: "#222",
-                color: "#00aaff",
-                border: "1px solid #333",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              <option value="Clear">Clear</option>
-              <option value="Haze">Haze</option>
-              <option value="Fog">Fog</option>
-              <option value="Rain">Rain</option>
-              <option value="Low light">Low Light</option>
-            </select>
+                {operatingMode === "simulation" && (
+                  <>
+                    <label
+                      style={{
+                        fontSize: "11px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <span>Atmospheric Condition:</span>
+                    </label>
+                    <select
+                      value={atmospheric}
+                      onChange={handleAtmosphericChange}
+                      style={{
+                        width: "100%",
+                        padding: "4px",
+                        background: "#222",
+                        color: "#00aaff",
+                        border: "1px solid #333",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <option value="Clear">Clear</option>
+                      <option value="Haze">Haze</option>
+                      <option value="Fog">Fog</option>
+                      <option value="Rain">Rain</option>
+                      <option value="Low light">Low Light</option>
+                    </select>
+                  </>
+                )}
+                
+                <label
+                  style={{
+                    fontSize: "11px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: "5px",
+                  }}
+                >
+                  <span>Image Noise:</span>
+                </label>
+                <select
+                  value={noiseType}
+                  onChange={handleNoiseTypeChange}
+                  style={{
+                    width: "100%",
+                    padding: "4px",
+                    background: "#222",
+                    color: "#ff8800",
+                    border: "1px solid #333",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                  }}
+                >
+                  <option value="None">None</option>
+                  <option value="Salt & Pepper">Salt & Pepper</option>
+                  <option value="Gaussian">Gaussian</option>
+                  <option value="Poisson">Poisson</option>
+                </select>
+                {noiseType !== "None" && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <span style={{ fontSize: "11px" }}>
+                      StdDev: {noiseStdDev}
+                    </span>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={noiseStdDev}
+                      onChange={handleNoiseStdDevChange}
+                      style={{ flex: 1, accentColor: "#ff8800" }}
+                    />
+                  </div>
+                )}
 
-            <label
-              style={{
-                fontSize: "11px",
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "5px",
-              }}
-            >
-              <span>Image Noise:</span>
-            </label>
-            <select
-              value={noiseType}
-              onChange={handleNoiseTypeChange}
-              style={{
-                width: "100%",
-                padding: "4px",
-                background: "#222",
-                color: "#ff8800",
-                border: "1px solid #333",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              <option value="None">None</option>
-              <option value="Salt & Pepper">Salt & Pepper</option>
-              <option value="Gaussian">Gaussian</option>
-              <option value="Poisson">Poisson</option>
-            </select>
-            {noiseType !== "None" && (
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "10px" }}
-              >
-                <span style={{ fontSize: "11px" }}>StdDev: {noiseStdDev}</span>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: "5px",
+                  }}
+                >
+                  <span>Camera Jitter (± px): {cameraJitter}</span>
+                </label>
                 <input
                   type="range"
-                  min="1"
-                  max="100"
-                  value={noiseStdDev}
-                  onChange={handleNoiseStdDevChange}
-                  style={{ flex: 1, accentColor: "#ff8800" }}
+                  min="0"
+                  max="50"
+                  value={cameraJitter}
+                  onChange={handleCameraJitterChange}
+                  style={{ width: "100%", accentColor: "#ff0044" }}
                 />
-              </div>
-            )}
 
-            <label
-              style={{
-                fontSize: "11px",
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "5px",
-              }}
-            >
-              <span>Camera Jitter (± px): {cameraJitter}</span>
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="50"
-              value={cameraJitter}
-              onChange={handleCameraJitterChange}
-              style={{ width: "100%", accentColor: "#ff0044" }}
-            />
-
-            <label
-              style={{
-                fontSize: "11px",
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "5px",
-              }}
-            >
-              <span style={{ fontWeight: "bold" }}>Platform Motion</span>
-              <span style={{ color: "#888", fontSize: "10px" }}>
-                camera base drift
-              </span>
-            </label>
-            <select
-              value={platformMotion}
-              onChange={handlePlatformMotionChange}
-              style={{
-                width: "100%",
-                padding: "4px",
-                background: "#222",
-                color: "#ff00ff",
-                border: "1px solid #333",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              <option value="None">None (Stable Platform)</option>
-              <option value="Linear">Linear Drift</option>
-              <option value="Circular">Circular Sway</option>
-              <option value="Random">Random Shake</option>
-              <option value="Figure of 8">Figure-8 Sway</option>
-              <option value="Spiral">Spiral Drift</option>
-            </select>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: "5px",
+                  }}
+                >
+                  <span style={{ fontWeight: "bold" }}>Platform Motion</span>
+                  <span style={{ color: "#888", fontSize: "10px" }}>
+                    camera base drift
+                  </span>
+                </label>
+                <select
+                  value={platformMotion}
+                  onChange={handlePlatformMotionChange}
+                  style={{
+                    width: "100%",
+                    padding: "4px",
+                    background: "#222",
+                    color: "#ff00ff",
+                    border: "1px solid #333",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                  }}
+                >
+                  <option value="None">None (Stable Platform)</option>
+                  <option value="Linear">Linear Drift</option>
+                  <option value="Circular">Circular Sway</option>
+                  <option value="Random">Random Shake</option>
+                  <option value="Figure of 8">Figure-8 Sway</option>
+                  <option value="Spiral">Spiral Drift</option>
+                </select>
           </div>
         </div>
       </div>
@@ -942,23 +1197,40 @@ function App() {
           border: "1px solid #222",
         }}
       >
-        {/* THE 2000x2000 WORLD CONTAINER */}
+        {/* DYNAMIC WORLD CONTAINER */}
         <div
           style={{
-            width: "2000px",
-            height: "2000px",
+            width: telemetry?.video ? `${telemetry.video.width}px` : operatingMode === "benchmark" && benchmarkFile ? "1920px" : "2000px",
+            height: telemetry?.video ? `${telemetry.video.height}px` : operatingMode === "benchmark" && benchmarkFile ? "1080px" : "2000px",
             flexShrink: 0,
             position: "relative",
-            background: "#0a0a0a",
+            background: operatingMode === "benchmark" ? "#1a1a1a" : "#0a0a0a",
             transform: `scale(${zoomLevel})`,
             transformOrigin: "center center",
-            backgroundImage: `
+            backgroundImage: operatingMode === "benchmark" ? "none" : `
             linear-gradient(#1a1a1a 1px, transparent 1px),
             linear-gradient(90deg, #1a1a1a 1px, transparent 1px)
           `,
             backgroundSize: "100px 100px" /* Draw a grid line every 100px */,
           }}
         >
+          {operatingMode === "benchmark" && benchmarkFile && (
+            <video
+              ref={videoRef}
+              src={benchmarkFile.url}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                zIndex: 0,
+              }}
+              muted
+              playsInline
+            />
+          )}
           {/* Axis Labels (Just a few to show scale) */}
           <div
             style={{
@@ -1070,20 +1342,62 @@ function App() {
                   </div>
                 ))}
 
-              {/* THE TARGET BEACON (10x10 White Square) */}
-              <div
-                style={{
-                  position: "absolute",
-                  left: `${targetX - 5}px`, // Center the 10x10 dot
-                  top: `${targetY - 5}px`,
-                  width: "10px",
-                  height: "10px",
-                  background: "#fff",
-                  boxShadow: "0 0 10px #fff", // Glowing effect
-                  zIndex: 2,
-                }}
-              />
-
+              {/* THE TARGET BEACON OR CENTROID TRAIL */}
+              {operatingMode === "simulation" ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: `${targetX - 5}px`, // Center the 10x10 dot
+                    top: `${targetY - 5}px`,
+                    width: "10px",
+                    height: "10px",
+                    background: "#fff",
+                    boxShadow: "0 0 10px #fff", // Glowing effect
+                    zIndex: 2,
+                  }}
+                />
+              ) : (
+                <>
+                  {telemetry?.centroid_trail && (
+                    <svg
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: telemetry?.video ? `${telemetry.video.width}px` : "2000px",
+                        height: telemetry?.video ? `${telemetry.video.height}px` : "2000px",
+                        pointerEvents: "none",
+                        zIndex: 1,
+                      }}
+                    >
+                      <polyline
+                        points={telemetry.centroid_trail
+                          .map((p) => `${p.x},${p.y}`)
+                          .join(" ")}
+                        fill="none"
+                        stroke="#ff00ff"
+                        strokeWidth="2"
+                        strokeDasharray="4, 4"
+                      />
+                    </svg>
+                  )}
+                  {telemetry?.centroid && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: `${telemetry.centroid.x - 4}px`,
+                        top: `${telemetry.centroid.y - 4}px`,
+                        width: "8px",
+                        height: "8px",
+                        background: "#ff00ff",
+                        borderRadius: "50%",
+                        boxShadow: "0 0 10px #ff00ff",
+                        zIndex: 2,
+                      }}
+                    />
+                  )}
+                </>
+              )}
               {/* NLP PREDICTED PATH VISUALIZATION */}
               {telemetry?.predicted_path &&
                 telemetry.predicted_path.length > 0 && (
@@ -1129,7 +1443,7 @@ function App() {
                 />
               )}
 
-              {/* THE CAMERA VIEWPORT (640x480 Green Hollow Box) */}
+              {/* THE CAMERA VIEWPORT (Professional HUD) */}
               <div
                 style={{
                   position: "absolute",
@@ -1137,40 +1451,221 @@ function App() {
                   top: `${camY}px`,
                   width: "640px",
                   height: "480px",
-                  border: "2px solid rgba(0, 255, 0, 0.7)",
-                  background: "rgba(0, 255, 0, 0.05)",
-                  zIndex: 1,
-                  pointerEvents: "none", // Don't block clicking
+                  border: "1px solid rgba(0, 255, 0, 0.2)",
+                  background: "rgba(0, 255, 0, 0.02)",
+                  boxShadow: "inset 0 0 50px rgba(0, 255, 0, 0.05)",
+                  zIndex: 3,
+                  pointerEvents: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  padding: "15px",
+                  boxSizing: "border-box",
                 }}
               >
-                {/* Camera Crosshair (Center of the camera) */}
-                <div
-                  style={{
+                {/* 4 Corner Brackets */}
+                <div style={{ position: "absolute", top: 0, left: 0, width: "30px", height: "30px", borderTop: "3px solid #00ff00", borderLeft: "3px solid #00ff00" }} />
+                <div style={{ position: "absolute", top: 0, right: 0, width: "30px", height: "30px", borderTop: "3px solid #00ff00", borderRight: "3px solid #00ff00" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, width: "30px", height: "30px", borderBottom: "3px solid #00ff00", borderLeft: "3px solid #00ff00" }} />
+                <div style={{ position: "absolute", bottom: 0, right: 0, width: "30px", height: "30px", borderBottom: "3px solid #00ff00", borderRight: "3px solid #00ff00" }} />
+
+                {/* Top HUD Row */}
+                <div style={{ display: "flex", justifyContent: "space-between", width: "100%", color: "#00ff00", fontFamily: "monospace", fontSize: "14px", fontWeight: "bold", textShadow: "0 0 5px #00ff00" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#ff0000", animation: "blink 1s infinite" }} />
+                    REC
+                  </div>
+                  <div>FOV: 4.0° | PTZ-TRACK</div>
+                  <div>F: {telemetry.frame || 0}</div>
+                </div>
+
+                {/* Center Crosshair (Complex) */}
+                <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", width: "40px", height: "40px", border: "1px solid rgba(0, 255, 0, 0.4)", borderRadius: "50%" }}>
+                  <div style={{ position: "absolute", left: "20px", top: "-10px", width: "1px", height: "60px", background: "rgba(0, 255, 0, 0.6)" }} />
+                  <div style={{ position: "absolute", left: "-10px", top: "20px", width: "60px", height: "1px", background: "rgba(0, 255, 0, 0.6)" }} />
+                  {/* Inner dot */}
+                  <div style={{ position: "absolute", left: "19px", top: "19px", width: "2px", height: "2px", background: "#00ff00" }} />
+                </div>
+
+                {/* Target Lock Box (If tracking) */}
+                {telemetry.status === "TRACKING" && telemetry.error && (
+                  <div style={{
                     position: "absolute",
-                    left: "320px",
-                    top: "240px",
-                    width: "20px",
-                    height: "1px",
-                    background: "rgba(0, 255, 0, 0.5)",
-                    transform: "translate(-50%, -50%)",
-                  }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    left: "320px",
-                    top: "240px",
-                    width: "1px",
-                    height: "20px",
-                    background: "rgba(0, 255, 0, 0.5)",
-                    transform: "translate(-50%, -50%)",
-                  }}
-                />
+                    left: `${320 + telemetry.error.x - 20}px`,
+                    top: `${240 + telemetry.error.y - 20}px`,
+                    width: "40px", height: "40px",
+                    border: "2px dashed #00ff00",
+                    animation: "spin 10s linear infinite",
+                  }} />
+                )}
+
+                {/* Bottom HUD Row */}
+                <div style={{ display: "flex", justifyContent: "space-between", width: "100%", color: "#00ff00", fontFamily: "monospace", fontSize: "12px", textShadow: "0 0 5px #00ff00", alignItems: "flex-end" }}>
+                  <div>
+                    ERR X: {telemetry.error?.x?.toFixed(1) || "0.0"}<br/>
+                    ERR Y: {telemetry.error?.y?.toFixed(1) || "0.0"}
+                  </div>
+                  <div style={{ textAlign: "center", fontSize: "16px", fontWeight: "bold" }}>
+                    {telemetry.status || "WAITING"}
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    RMSE: {telemetry.error?.rmse?.toFixed(2) || "0.00"}<br/>
+                    SPD: 5°/s LIMIT
+                  </div>
+                </div>
               </div>
             </>
           )}
         </div>
       </div>
+
+      {/* FINAL BENCHMARK REPORT MODAL */}
+      {benchmarkSummary && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            background: "rgba(0,0,0,0.8)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              background: "#111",
+              padding: "20px",
+              borderRadius: "8px",
+              border: "1px solid #333",
+              width: "500px",
+              color: "#fff",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                color: "#60a5fa",
+                borderBottom: "1px solid #333",
+                paddingBottom: "10px",
+              }}
+            >
+              📊 Benchmark Complete
+            </h2>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "10px",
+                marginBottom: "20px",
+              }}
+            >
+              <div style={{ color: "#aaa" }}>Acquisition Time:</div>
+              <div
+                style={{
+                  color:
+                    benchmarkSummary.acquisition_time_sec <= 2.0
+                      ? "#0f0"
+                      : "#f00",
+                  textAlign: "right",
+                }}
+              >
+                {benchmarkSummary.acquisition_time_sec
+                  ? `${benchmarkSummary.acquisition_time_sec}s`
+                  : "Failed"}
+              </div>
+
+              <div style={{ color: "#aaa" }}>Avg Centroid Error:</div>
+              <div
+                style={{
+                  color:
+                    benchmarkSummary.avg_centroid_error <= 10.0
+                      ? "#0f0"
+                      : "#f00",
+                  textAlign: "right",
+                }}
+              >
+                {benchmarkSummary.avg_centroid_error} px
+              </div>
+
+              <div style={{ color: "#aaa" }}>Max Error:</div>
+              <div style={{ textAlign: "right" }}>
+                {benchmarkSummary.max_centroid_error} px
+              </div>
+
+              <div style={{ color: "#aaa" }}>RMSE Overall:</div>
+              <div style={{ color: "#00aaff", textAlign: "right" }}>
+                {benchmarkSummary.rmse_overall} px
+              </div>
+
+              <div style={{ color: "#aaa" }}>Lock Retention:</div>
+              <div
+                style={{
+                  color:
+                    benchmarkSummary.lock_retention_rate >= 95.0
+                      ? "#0f0"
+                      : "#f00",
+                  textAlign: "right",
+                }}
+              >
+                {benchmarkSummary.lock_retention_rate}%
+              </div>
+
+              <div style={{ color: "#aaa" }}>Re-acq Time (avg):</div>
+              <div
+                style={{
+                  color:
+                    !benchmarkSummary.avg_reacquisition_sec ||
+                    benchmarkSummary.avg_reacquisition_sec <= 1.0
+                      ? "#0f0"
+                      : "#f00",
+                  textAlign: "right",
+                }}
+              >
+                {benchmarkSummary.avg_reacquisition_sec
+                  ? `${benchmarkSummary.avg_reacquisition_sec}s`
+                  : "N/A"}
+              </div>
+
+              <div style={{ color: "#aaa" }}>Processing FPS:</div>
+              <div
+                style={{
+                  color:
+                    benchmarkSummary.processing_fps >= 20.0 ? "#0f0" : "#f00",
+                  textAlign: "right",
+                }}
+              >
+                {benchmarkSummary.processing_fps}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => setBenchmarkSummary(null)}
+                style={{
+                  padding: "8px 16px",
+                  background: "#333",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

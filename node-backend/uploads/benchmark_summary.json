@@ -1,0 +1,12 @@
+{
+  "total_frames": 240,
+  "duration_sec": 10.0,
+  "processing_fps": 23.8,
+  "acquisition_time_sec": 0.026,
+  "avg_centroid_error": 82.82,
+  "max_centroid_error": 220.91,
+  "rmse_overall": 92.04,
+  "lock_retention_rate": 100.0,
+  "avg_reacquisition_sec": null,
+  "total_reacquisitions": 0
+}
