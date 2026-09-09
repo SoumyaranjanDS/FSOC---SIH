@@ -69,6 +69,20 @@ function App() {
 
   const sendEngineCommand = (action) => {
     socket.emit("engine_control", action);
+    if (action === "start" || action === "restart") {
+      setTimeout(() => {
+        socket.emit("set_config", {
+          target_speed: targetSpeed,
+          target_path: targetPath,
+          obstacles_enabled: obstaclesEnabled,
+          noise_type: noiseType,
+          noise_std_dev: noiseStdDev,
+          camera_jitter: cameraJitter,
+          atmospheric: atmospheric,
+          platform_motion: platformMotion,
+        });
+      }, 500); // Send config right after python process has booted up
+    }
   };
 
   useEffect(() => {
