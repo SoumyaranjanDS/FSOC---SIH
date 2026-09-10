@@ -32,7 +32,6 @@ from video_tracker import VideoTracker
 # ──────────────────────────────────────────────────────────────────────────────
 CAM_W      = 640
 CAM_H      = 480
-KP         = 0.15           # P-controller gain
 MAX_SPEED  = 26.66          # px/frame  ← 5°/sec × (640px/4°FOV) / 30FPS
 
 # Adaptive Clear environment — tracker auto-tunes to video content
@@ -189,9 +188,17 @@ def main():
             viewport, cam_x, cam_y, "Random", [], ENV_PARAMS
         )
 
-        # ── PTZ motor physics ─────────────────────────────────────────────────
-        cam_dx = clamp(error_x * KP, -MAX_SPEED, MAX_SPEED)
-        cam_dy = clamp(error_y * KP, -MAX_SPEED, MAX_SPEED)
+        # ── PTZ motor physics (matched perfectly to simulation_engine.py) ─────
+        cam_dx = 0
+        cam_dy = 0
+        if abs(error_x) > 2:
+            cam_dx = error_x * 0.8
+        if abs(error_y) > 2:
+            cam_dy = error_y * 0.8
+
+        cam_dx = clamp(cam_dx, -MAX_SPEED, MAX_SPEED)
+        cam_dy = clamp(cam_dy, -MAX_SPEED, MAX_SPEED)
+
         cam_x  = clamp(cam_x + cam_dx, 0, max(0, VID_W - CAM_W))
         cam_y  = clamp(cam_y + cam_dy, 0, max(0, VID_H - CAM_H))
 
