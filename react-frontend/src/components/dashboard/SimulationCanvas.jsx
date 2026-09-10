@@ -42,6 +42,11 @@ function SimulationCanvas({
   return (
     <main className="simulation-stage">
       <div className="world" style={{ transform: `scale(${zoomLevel})` }}>
+        <div className="rec-sign">● REC</div>
+        <div className="env-corner top-left"></div>
+        <div className="env-corner top-right"></div>
+        <div className="env-corner bottom-left"></div>
+        <div className="env-corner bottom-right"></div>
         <span className="axis-label axis-origin">(0,0)</span>
         <span className="axis-label axis-center">(1000,1000)</span>
         <span className="axis-label axis-end">(2000,2000)</span>

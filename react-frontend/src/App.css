@@ -255,11 +255,13 @@ select {
   width: 2000px;
   height: 2000px;
   transform-origin: center center;
-  background-color: #071417;
+  background-color: #000;
   background-image:
-    linear-gradient(#163034 1px, transparent 1px),
-    linear-gradient(90deg, #163034 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.15) 1px, transparent 1px);
   background-size: 100px 100px;
+  
+  border-radius: 20px;
 }
 .axis-label {
   position: absolute;
@@ -294,6 +296,53 @@ select {
   background: rgba(85, 230, 178, 0.04);
   z-index: 2;
   pointer-events: none;
+}
+.rec-sign {
+  position: absolute;
+  top: 40px;
+  left: 60px;
+  color: red;
+  font-weight: bold;
+  font-size: 50px;
+  letter-spacing: 4px;
+  animation: blink 1s infinite;
+  z-index: 20;
+}
+.env-corner {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border: 6px solid var(--green);
+  z-index: 10;
+  pointer-events: none;
+}
+.env-corner.top-left {
+  top: 20px;
+  left: 20px;
+  border-right: none;
+  border-bottom: none;
+  border-top-left-radius: 16px;
+}
+.env-corner.top-right {
+  top: 20px;
+  right: 20px;
+  border-left: none;
+  border-bottom: none;
+  border-top-right-radius: 16px;
+}
+.env-corner.bottom-left {
+  bottom: 20px;
+  left: 20px;
+  border-right: none;
+  border-top: none;
+  border-bottom-left-radius: 16px;
+}
+.env-corner.bottom-right {
+  bottom: 20px;
+  right: 20px;
+  border-left: none;
+  border-top: none;
+  border-bottom-right-radius: 16px;
 }
 .camera-viewport i {
   position: absolute;
@@ -1459,4 +1508,68 @@ select {
 .dashboard-body .metric,
 .retention {
   background: #edf5ef;
+}
+
+/* Final contrast and action-state polish. */
+.dashboard-body {
+  color: #1b2b21;
+}
+.dashboard-body .panel-kicker,
+.dashboard-body .section-label,
+.benchmark-kicker {
+  color: #284c38;
+  font-weight: 600;
+}
+.dashboard-body .control-mode-row,
+.dashboard-body .status-list,
+.dashboard-body .config-section,
+.dashboard-body .status-panel p,
+.dashboard-body .coordinate-grid span,
+.dashboard-body .metric span,
+.dashboard-body .retention span,
+.dashboard-body .benchmark-upload,
+.dashboard-body .benchmark-progress,
+.dashboard-body .muted {
+  color: #263d2e;
+  font-weight: 500;
+}
+.dashboard-body .config-section label,
+.dashboard-body .checkbox-label,
+.dashboard-body .benchmark-upload label,
+.dashboard-body .benchmark-progress,
+.dashboard-body .status-list {
+  color: #1f3527;
+}
+.dashboard-body .coordinate-grid strong,
+.dashboard-body .metric strong,
+.dashboard-body .retention strong,
+.dashboard-body .benchmark-trigger-row strong {
+  color: #0e1e14;
+  font-weight: 600;
+}
+.dashboard-body .button,
+.dashboard-body .mode-switcher button,
+.benchmark-button {
+  font-weight: 600;
+}
+.dashboard-body .button-start,
+.dashboard-body .button-start:hover:not(:disabled) {
+  border-color: #16854f;
+  color: #ffffff;
+  background: #168c55;
+  box-shadow: 0 4px 10px rgba(22, 140, 85, 0.2);
+}
+.dashboard-body .button-start:hover:not(:disabled) {
+  background: #117744;
+  border-color: #117744;
+}
+.dashboard-body .button-start:disabled {
+  color: #6f8c7b;
+  background: #dfe9e1;
+  border-color: #c4d5c8;
+  box-shadow: none;
+}
+.dashboard-body .button-stop,
+.dashboard-body .button-restart {
+  font-weight: 600;
 }
