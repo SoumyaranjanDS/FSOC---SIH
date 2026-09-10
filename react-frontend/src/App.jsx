@@ -30,14 +30,34 @@ function App() {
   const [platformMotion, setPlatformMotion] = useState("None");
   const rmseCanvasRef = useRef(null);
   const previousTelemetryRef = useRef({});
+  const camX = telemetry?.camera?.x || 0;
+  const camY = telemetry?.camera?.y || 0;
+
   const benchmark = useVideoBenchmark({
     socket,
     telemetry,
     engineStatus,
+    camX,
+    camY,
     onClearTelemetry: () => {
       setTelemetry(null);
       setLogs([]);
     },
+    config: {
+      noise_type: noiseType,
+      noise_std_dev: noiseStdDev,
+      camera_jitter: cameraJitter,
+      platform_motion: platformMotion,
+    },
+    noiseType,
+    setNoiseType,
+    noiseStdDev,
+    setNoiseStdDev,
+    cameraJitter,
+    setCameraJitter,
+    platformMotion,
+    setPlatformMotion,
+    onConfigChange: (c) => socket.emit("set_config", c),
   });
 
   const setOperatingMode = (mode) => {
@@ -149,8 +169,6 @@ function App() {
 
   const targetX = telemetry?.target?.x || 0;
   const targetY = telemetry?.target?.y || 0;
-  const camX = telemetry?.camera?.x || 0;
-  const camY = telemetry?.camera?.y || 0;
 
   return (
     <div className="dashboard-shell">

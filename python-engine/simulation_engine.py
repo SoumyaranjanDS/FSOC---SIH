@@ -15,8 +15,6 @@ CAM_HEIGHT = 480  # PDF: Camera Resolution 640 x 480 pixels
 FPS = 30  # PDF: Camera update Rate 30 Hz (min.)
 DELAY_MS = int(1000 / FPS)
 
-MAX_SPEED_PX = 1.77  # Max Pan/Tilt speed per frame (approx 5 degrees/sec)
-
 # --- DYNAMIC CONFIGURATION ---
 TARGET_MAX_SPEED = 15.0
 TARGET_PATH = "Random"
