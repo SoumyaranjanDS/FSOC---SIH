@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend-engine:
+    build:
+      context: .
+      dockerfile: node-backend/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./node-backend:/app/node-backend
+      - ./python-engine:/app/python-engine
+      # Protect the container's installed node_modules from being overwritten by the host
+      - /app/node-backend/node_modules
+    working_dir: /app/node-backend
+    environment:
+      - PORT=3000
+
+  frontend:
+    build:
+      context: ./react-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./react-frontend:/app
+      # Protect the container's installed node_modules from being overwritten by the host
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
