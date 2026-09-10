@@ -5,8 +5,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     libgl1-mesa-glx \
     libglib2.0-0 \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+    nodejs \
+    npm \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
