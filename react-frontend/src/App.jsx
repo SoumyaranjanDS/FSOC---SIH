@@ -8,6 +8,7 @@ import RmsePanel from "./components/dashboard/RmsePanel";
 import SimulationCanvas from "./components/dashboard/SimulationCanvas";
 import StatusPanel from "./components/dashboard/StatusPanel";
 import TopNav from "./components/dashboard/TopNav";
+import useVideoBenchmark from "./components/dashboard/VideoBenchmark";
 
 const socket = io("http://localhost:3000");
 
@@ -16,6 +17,8 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [logs, setLogs] = useState([]);
   const [engineStatus, setEngineStatus] = useState("stopped");
+  const [operatingMode, setOperatingModeState] = useState("simulation");
+  const operatingModeRef = useRef("simulation");
   const [targetSpeed, setTargetSpeed] = useState(15);
   const [targetPath, setTargetPath] = useState("Random");
   const [obstaclesEnabled, setObstaclesEnabled] = useState(false);
@@ -27,44 +30,72 @@ function App() {
   const [platformMotion, setPlatformMotion] = useState("None");
   const rmseCanvasRef = useRef(null);
   const previousTelemetryRef = useRef({});
+  const benchmark = useVideoBenchmark({
+    socket,
+    telemetry,
+    engineStatus,
+    onClearTelemetry: () => {
+      setTelemetry(null);
+      setLogs([]);
+    },
+  });
+
+  const setOperatingMode = (mode) => {
+    setOperatingModeState(mode);
+    operatingModeRef.current = mode;
+    setTelemetry(null);
+    setLogs([]);
+  };
 
   useEffect(() => {
     const handleConnect = () => setConnected(true);
     const handleDisconnect = () => setConnected(false);
     const handleEngineStatus = (status) => setEngineStatus(status);
     const handleTelemetry = (data) => {
+      if (operatingModeRef.current === "benchmark" && data.mode !== "benchmark")
+        return;
+      if (
+        operatingModeRef.current === "simulation" &&
+        data.mode === "benchmark"
+      )
+        return;
+
       setTelemetry(data);
       const previous = previousTelemetryRef.current;
-      const events = [];
       const frame = formatSimulationTime(data.performance?.duration);
+      const events = [];
       if (data.log) events.push(data.log);
       if (!previous.hasTarget && data.target)
         events.push("BEACON DETECTED - TRACK LOCK ACQUIRED");
-      if (data.obstacles?.length && !previous.hasObstacles)
+      if (data.obstacles?.length && !previous.hasObstacles) {
         events.push(
           `OBJECT DETECTED - ${data.obstacles.length} VIRTUAL OBSTACLE${data.obstacles.length === 1 ? "" : "S"}`,
         );
+      }
       if (previous.status && previous.status !== data.status && data.status)
         events.push(`TRACKING STATE: ${data.status}`);
       if (
         data.performance?.acquisition_time > 0 &&
         !previous.acquisitionReported
-      )
+      ) {
         events.push(
           `ACQUISITION COMPLETE - ${data.performance.acquisition_time.toFixed(2)} s`,
         );
+      }
       if (
         data.performance?.reacquisition_time > 0 &&
         !previous.reacquisitionReported
-      )
+      ) {
         events.push(
           `RE-ACQUISITION COMPLETE - ${data.performance.reacquisition_time.toFixed(2)} s`,
         );
+      }
       if (
         Math.floor(data.performance?.duration || 0) >
         Math.floor(previous.duration || 0)
-      )
+      ) {
         events.push(`SIMULATION TIME ${frame}`);
+      }
       if (events.length)
         setLogs((current) =>
           [...current, ...events.map((event) => `[${frame}] ${event}`)].slice(
@@ -83,7 +114,6 @@ function App() {
       };
       drawRmse(data.rmse_history, rmseCanvasRef.current);
     };
-
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("engine_status", handleEngineStatus);
@@ -126,47 +156,69 @@ function App() {
     <div className="dashboard-shell">
       <TopNav connected={connected} />
       <div className="dashboard-body">
-        <ControlPanel
-          connected={connected}
-          engineStatus={engineStatus}
-          status={telemetry?.status || "WAITING"}
-          targetX={targetX}
-          targetY={targetY}
-          camX={camX}
-          camY={camY}
-          targetSpeed={targetSpeed}
-          setTargetSpeed={setTargetSpeed}
-          targetPath={targetPath}
-          setTargetPath={setTargetPath}
-          obstaclesEnabled={obstaclesEnabled}
-          setObstaclesEnabled={setObstaclesEnabled}
-          zoomLevel={zoomLevel}
-          setZoomLevel={setZoomLevel}
-          noiseType={noiseType}
-          setNoiseType={setNoiseType}
-          noiseStdDev={noiseStdDev}
-          setNoiseStdDev={setNoiseStdDev}
-          cameraJitter={cameraJitter}
-          setCameraJitter={setCameraJitter}
-          atmospheric={atmospheric}
-          setAtmospheric={setAtmospheric}
-          platformMotion={platformMotion}
-          setPlatformMotion={setPlatformMotion}
-          onCommand={sendEngineCommand}
-          onConfigChange={sendConfig}
-        />
-        <div className="dashboard-content">
-          <StatusPanel telemetry={telemetry} />
-          <SimulationCanvas
-            telemetry={telemetry}
-            zoomLevel={zoomLevel}
-            atmospheric={atmospheric}
-            noiseType={noiseType}
-            camX={camX}
-            camY={camY}
+        {operatingMode === "benchmark" ? (
+          benchmark.panel
+        ) : (
+          <ControlPanel
+            connected={connected}
+            engineStatus={engineStatus}
+            status={telemetry?.status || "WAITING"}
             targetX={targetX}
             targetY={targetY}
+            camX={camX}
+            camY={camY}
+            targetSpeed={targetSpeed}
+            setTargetSpeed={setTargetSpeed}
+            targetPath={targetPath}
+            setTargetPath={setTargetPath}
+            obstaclesEnabled={obstaclesEnabled}
+            setObstaclesEnabled={setObstaclesEnabled}
+            zoomLevel={zoomLevel}
+            setZoomLevel={setZoomLevel}
+            noiseType={noiseType}
+            setNoiseType={setNoiseType}
+            noiseStdDev={noiseStdDev}
+            setNoiseStdDev={setNoiseStdDev}
+            cameraJitter={cameraJitter}
+            setCameraJitter={setCameraJitter}
+            atmospheric={atmospheric}
+            setAtmospheric={setAtmospheric}
+            platformMotion={platformMotion}
+            setPlatformMotion={setPlatformMotion}
+            onCommand={sendEngineCommand}
+            onConfigChange={sendConfig}
           />
+        )}
+        <div className="dashboard-content">
+          <div className="mode-switcher">
+            <button
+              className={operatingMode === "simulation" ? "active" : ""}
+              onClick={() => setOperatingMode("simulation")}
+            >
+              SIMULATION
+            </button>
+            <button
+              className={operatingMode === "benchmark" ? "active" : ""}
+              onClick={() => setOperatingMode("benchmark")}
+            >
+              VIDEO BENCHMARK
+            </button>
+          </div>
+          <StatusPanel telemetry={telemetry} />
+          {operatingMode === "benchmark" ? (
+            benchmark.stage
+          ) : (
+            <SimulationCanvas
+              telemetry={telemetry}
+              zoomLevel={zoomLevel}
+              atmospheric={atmospheric}
+              noiseType={noiseType}
+              camX={camX}
+              camY={camY}
+              targetX={targetX}
+              targetY={targetY}
+            />
+          )}
         </div>
         <div className="dashboard-sidebar">
           <LogsPanel logs={logs} />
@@ -174,6 +226,7 @@ function App() {
           <RmsePanel canvasRef={rmseCanvasRef} telemetry={telemetry} />
         </div>
       </div>
+      {benchmark.modal}
     </div>
   );
 }
@@ -183,8 +236,7 @@ function formatSimulationTime(seconds = 0) {
   const minutes = Math.floor(totalSeconds / 60)
     .toString()
     .padStart(2, "0");
-  const remainder = (totalSeconds % 60).toFixed(2).padStart(5, "0");
-  return `T+${minutes}:${remainder}`;
+  return `T+${minutes}:${(totalSeconds % 60).toFixed(2).padStart(5, "0")}`;
 }
 
 function drawRmse(history, canvas) {
@@ -208,7 +260,8 @@ function drawRmse(history, canvas) {
   history.forEach((value, index) => {
     const x = (index / (history.length - 1 || 1)) * width;
     const y = height - (value / maxValue) * height;
-    index === 0 ? context.moveTo(x, y) : context.lineTo(x, y);
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
   });
   context.strokeStyle = "#55e6b2";
   context.lineWidth = 2;
