@@ -6,6 +6,7 @@ import LogsPanel from "./components/dashboard/LogsPanel";
 import PerformancePanel from "./components/dashboard/PerformancePanel";
 import RmsePanel from "./components/dashboard/RmsePanel";
 import SimulationCanvas from "./components/dashboard/SimulationCanvas";
+import WebcamCanvas from "./components/dashboard/WebcamCanvas";
 import StatusPanel from "./components/dashboard/StatusPanel";
 import TopNav from "./components/dashboard/TopNav";
 import useVideoBenchmark from "./components/dashboard/VideoBenchmark";
@@ -16,12 +17,17 @@ function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [connected, setConnected] = useState(false);
   const [logs, setLogs] = useState([]);
-  const [engineStatus, setEngineStatus] = useState("stopped");
+  const [engineStatuses, setEngineStatuses] = useState({
+    simulation: "stopped",
+    benchmark: "stopped",
+    webcam: "stopped",
+  });
   const [operatingMode, setOperatingModeState] = useState("simulation");
   const operatingModeRef = useRef("simulation");
   const [targetSpeed, setTargetSpeed] = useState(15);
   const [targetPath, setTargetPath] = useState("Random");
   const [obstaclesEnabled, setObstaclesEnabled] = useState(false);
+  const [dualTargetEnabled, setDualTargetEnabled] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(0.4);
   const [noiseType, setNoiseType] = useState("None");
   const [noiseStdDev, setNoiseStdDev] = useState(20);
@@ -36,7 +42,7 @@ function App() {
   const benchmark = useVideoBenchmark({
     socket,
     telemetry,
-    engineStatus,
+    engineStatus: engineStatuses.benchmark,
     camX,
     camY,
     onClearTelemetry: () => {
@@ -70,14 +76,21 @@ function App() {
   useEffect(() => {
     const handleConnect = () => setConnected(true);
     const handleDisconnect = () => setConnected(false);
-    const handleEngineStatus = (status) => setEngineStatus(status);
+    const handleEngineStatus = (statusData) => {
+      if (statusData && statusData.mode) {
+        setEngineStatuses((prev) => ({
+          ...prev,
+          [statusData.mode]: statusData.status,
+        }));
+      } else if (typeof statusData === "string") {
+        setEngineStatuses((prev) => ({
+          ...prev,
+          [operatingModeRef.current]: statusData,
+        }));
+      }
+    };
     const handleTelemetry = (data) => {
-      if (operatingModeRef.current === "benchmark" && data.mode !== "benchmark")
-        return;
-      if (
-        operatingModeRef.current === "simulation" &&
-        data.mode === "benchmark"
-      )
+      if (data.mode && operatingModeRef.current !== data.mode)
         return;
 
       setTelemetry(data);
@@ -148,6 +161,16 @@ function App() {
 
   const sendConfig = (config) => socket.emit("set_config", config);
   const sendEngineCommand = (action) => {
+    if (operatingModeRef.current === "webcam") {
+      if (action === "start") socket.emit("start_webcam");
+      if (action === "stop") socket.emit("stop_webcam");
+      if (action === "restart") {
+        socket.emit("stop_webcam");
+        setTimeout(() => socket.emit("start_webcam"), 500);
+      }
+      return;
+    }
+
     socket.emit("engine_control", action);
     if (action === "start" || action === "restart") {
       setTimeout(
@@ -156,6 +179,7 @@ function App() {
             target_speed: targetSpeed,
             target_path: targetPath,
             obstacles_enabled: obstaclesEnabled,
+            dual_target: dualTargetEnabled,
             noise_type: noiseType,
             noise_std_dev: noiseStdDev,
             camera_jitter: cameraJitter,
@@ -179,7 +203,8 @@ function App() {
         ) : (
           <ControlPanel
             connected={connected}
-            engineStatus={engineStatus}
+            operatingMode={operatingMode}
+            engineStatus={engineStatuses[operatingMode]}
             status={telemetry?.status || "WAITING"}
             targetX={targetX}
             targetY={targetY}
@@ -191,6 +216,8 @@ function App() {
             setTargetPath={setTargetPath}
             obstaclesEnabled={obstaclesEnabled}
             setObstaclesEnabled={setObstaclesEnabled}
+            dualTargetEnabled={dualTargetEnabled}
+            setDualTargetEnabled={setDualTargetEnabled}
             zoomLevel={zoomLevel}
             setZoomLevel={setZoomLevel}
             noiseType={noiseType}
@@ -216,6 +243,12 @@ function App() {
               SIMULATION
             </button>
             <button
+              className={operatingMode === "webcam" ? "active" : ""}
+              onClick={() => setOperatingMode("webcam")}
+            >
+              LIVE WEBCAM
+            </button>
+            <button
               className={operatingMode === "benchmark" ? "active" : ""}
               onClick={() => setOperatingMode("benchmark")}
             >
@@ -225,6 +258,8 @@ function App() {
           <StatusPanel telemetry={telemetry} />
           {operatingMode === "benchmark" ? (
             benchmark.stage
+          ) : operatingMode === "webcam" ? (
+            <WebcamCanvas engineStatus={engineStatuses.webcam} />
           ) : (
             <SimulationCanvas
               telemetry={telemetry}

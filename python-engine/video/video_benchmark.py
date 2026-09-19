@@ -349,6 +349,7 @@ def main():
         elapsed = time.time() - start_time
         fps_now = frame_count / elapsed if elapsed > 0 else video_fps
         avg_err = total_rmse / frame_count
+        global_rmse = math.sqrt(sum_sq_rmse / frame_count) if frame_count > 0 else 0
         lock_rt = (locked_frames / frame_count) * 100
 
         # ── Telemetry JSON ────────────────────────────────────────────────────
@@ -367,6 +368,7 @@ def main():
             "performance": {
                 "fps": round(fps_now, 1),
                 "avg_error": round(avg_err, 2),
+                "global_rmse": round(global_rmse, 2),
                 "max_error": round(max_error, 2),
                 "lock_retention_rate": round(lock_rt, 1),
                 "acquisition_time": (
@@ -399,7 +401,7 @@ def main():
                 telemetry["predicted_path"] = [
                     {"x": int(p[0]), "y": int(p[1])} for p in tracker.gru_sequence[:50]
                 ]
-
+        telemetry["mode"] = "benchmark"
         print(json.dumps(telemetry), flush=True)
 
         # ── Pace to video FPS ─────────────────────────────────────────────────

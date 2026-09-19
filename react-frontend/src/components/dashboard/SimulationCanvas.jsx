@@ -81,6 +81,12 @@ function SimulationCanvas({
               className="target-beacon"
               style={{ left: targetX - 5, top: targetY - 5 }}
             />
+            {telemetry.target2 && (
+              <div
+                className="target-beacon"
+                style={{ left: telemetry.target2.x - 5, top: telemetry.target2.y - 5 }}
+              />
+            )}
             {telemetry.predicted_path?.length > 0 && (
               <svg className="prediction-path" viewBox="0 0 2000 2000">
                 <polyline

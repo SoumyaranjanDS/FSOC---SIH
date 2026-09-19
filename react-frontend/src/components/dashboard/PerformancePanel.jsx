@@ -8,19 +8,35 @@ function PerformancePanel({ telemetry }) {
   const duration = performance.duration
     ? new Date(performance.duration * 1000).toISOString().substring(14, 19)
     : "00:00";
-  const metric = (label, value, tone = "") => (
-    <div className="metric">
+  const metric = (label, value, tone = "", complianceText = null, isPassing = null) => (
+    <div className="metric" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
       <span>{label}</span>
-      <strong className={tone}>{value}</strong>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <strong className={tone}>{value}</strong>
+        {complianceText && (
+          <span className={isPassing ? "status-good" : "status-bad"} style={{ fontSize: "0.75rem" }}>
+            {complianceText} {isPassing ? "✓" : "✗"}
+          </span>
+        )}
+      </div>
     </div>
   );
+
+  const fps = performance.fps || 0;
+  const fpsPassed = fps >= 20;
+  
+  const rmse = performance.global_rmse || 0;
+  const rmsePassed = rmse <= 10;
+  
+  const targetLoss = 100 - retention;
+  const lossPassed = targetLoss < 5;
 
   return (
     <section className="dashboard-panel performance-panel">
       <div className="panel-heading">
         <span>LIVE PERFORMANCE REPORT</span>
-        <strong className="status-good">
-          {performance.fps?.toFixed(1) || "0.0"} FPS
+        <strong className={fpsPassed ? "status-good" : "status-bad"}>
+          {fps.toFixed(1)} FPS
         </strong>
       </div>
       <div className="metrics-grid">
@@ -33,11 +49,11 @@ function PerformancePanel({ telemetry }) {
           performance.acquisition_time > 0 ? "status-good" : "muted",
         )}
         {metric(
-          "Avg Tracking Error",
-          performance.avg_error
-            ? `${performance.avg_error.toFixed(2)} px`
-            : "0.00 px",
-          performance.avg_error > 10 ? "status-bad" : "status-good",
+          "RMSE (Track Error)",
+          `${rmse.toFixed(2)} px`,
+          rmsePassed ? "status-good" : "status-bad",
+          "Req ≤ 10",
+          rmsePassed
         )}
         {metric(
           "Max Tracking Error",
@@ -47,12 +63,17 @@ function PerformancePanel({ telemetry }) {
           "status-warn",
         )}
       </div>
-      <div className="retention">
-        <div>
-          <span>Lock Retention Rate</span>
-          <strong className={retention > 95 ? "status-good" : "status-bad"}>
-            {retention.toFixed(1)}%
-          </strong>
+      <div className="retention" style={{ marginTop: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+          <span>Target Loss Rate</span>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <span className={lossPassed ? "status-good" : "status-bad"} style={{ fontSize: "0.8rem" }}>
+              (Req &lt; 5%) {lossPassed ? "✓" : "✗"}
+            </span>
+            <strong className={lossPassed ? "status-good" : "status-bad"}>
+              {targetLoss.toFixed(1)}%
+            </strong>
+          </div>
         </div>
         <div className="progress">
           <span style={{ width: `${retention}%` }} />
