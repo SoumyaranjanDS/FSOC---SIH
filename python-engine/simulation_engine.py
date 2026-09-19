@@ -628,6 +628,9 @@ def main():
         # If the AI produced a text log, send it to the UI!
         if log_msg:
             telemetry["log"] = log_msg
+            
+        # Tag the telemetry with the mode
+        telemetry["mode"] = "simulation"
 
         # Print JSON so Node.js can read it (using flush=True to prevent buffering lag)
         import json

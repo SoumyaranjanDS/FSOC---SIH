@@ -401,7 +401,7 @@ def main():
                 telemetry["predicted_path"] = [
                     {"x": int(p[0]), "y": int(p[1])} for p in tracker.gru_sequence[:50]
                 ]
-
+        telemetry["mode"] = "benchmark"
         print(json.dumps(telemetry), flush=True)
 
         # ── Pace to video FPS ─────────────────────────────────────────────────

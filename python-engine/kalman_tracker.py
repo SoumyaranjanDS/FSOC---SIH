@@ -510,10 +510,15 @@ class SingleTrack:
                 self.target_brightness = 100.0  # Absolute minimum baseline
 
             no_history = len(self.measurement_history) == 0
+            
+            if len(frame.shape) == 3:
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            else:
+                gray_frame = frame
 
             if no_history:
                 # ── First-ever acquisition ─────────────────────────────────────────
-                blurred = cv2.GaussianBlur(frame, (25, 25), 0)
+                blurred = cv2.GaussianBlur(gray_frame, (25, 25), 0)
                 _, max_val, _, max_loc = cv2.minMaxLoc(blurred)
                 if max_val > 100:  # Absolute minimum
                     best_confidence = 0.95
@@ -539,12 +544,12 @@ class SingleTrack:
                     ry2 = min(self.cam_height, pred_vp_y + GATE_RADIUS)
 
                     if rx2 > rx1 and ry2 > ry1:
-                        blurred = cv2.GaussianBlur(frame, (25, 25), 0)
+                        blurred = cv2.GaussianBlur(gray_frame, (25, 25), 0)
                         roi = blurred[ry1:ry2, rx1:rx2]
                         _, max_val, _, local_loc = cv2.minMaxLoc(roi)
 
-                        # Must match expected beacon brightness (at least 70%)
-                        if max_val > (self.target_brightness * 0.7) and max_val > 50:
+                        # Must match expected beacon brightness (at least 40% to survive auto-exposure)
+                        if max_val > (self.target_brightness * 0.4) and max_val > 80:
                             best_confidence = 0.95
                             tx = rx1 + local_loc[0]
                             ty = ry1 + local_loc[1]
@@ -560,11 +565,11 @@ class SingleTrack:
                     # viewport but reject candidates too far from the last known position.
                     MAX_REACQ_DIST = 450  # world-px from last known
                     
-                    blurred = cv2.GaussianBlur(frame, (25, 25), 0)
+                    blurred = cv2.GaussianBlur(gray_frame, (25, 25), 0)
                     _, max_val, _, max_loc = cv2.minMaxLoc(blurred)
                     
                     # Stricter brightness check for re-acquisition to ignore background
-                    if max_val > (self.target_brightness * 0.75) and max_val > 50:
+                    if max_val > (self.target_brightness * 0.5) and max_val > 80:
                         tx, ty = max_loc
                         detected_world_x = cam_x + tx
                         detected_world_y = cam_y + ty
@@ -709,8 +714,9 @@ class SingleTrack:
             self._prev_cam_x = float(cam_x)
             self._prev_cam_y = float(cam_y)
             self._prev_frame_for_motion = frame.astype(np.float32)
-            if not hasattr(self, "_hanning_window") or self._hanning_window.shape != frame.shape[::-1]:
-                self._hanning_window = cv2.createHanningWindow(frame.shape[::-1], cv2.CV_32F)
+            win_size = (frame.shape[1], frame.shape[0])
+            if not hasattr(self, "_hanning_window") or self._hanning_window.shape != win_size:
+                self._hanning_window = cv2.createHanningWindow(win_size, cv2.CV_32F)
 
         # ----------------------------------------------------------
         #  COASTING WITH PROGRESSIVE RE-ACQUISITION
@@ -849,6 +855,9 @@ class KalmanTracker:
             env_params = {}
         if obstacles is None:
             obstacles = []
+            
+        if self.video_mode:
+            return self.tracks[0].update(frame, cam_x, cam_y, current_path, obstacles, env_params, managed=False)
             
         t0 = self.tracks[0]
         

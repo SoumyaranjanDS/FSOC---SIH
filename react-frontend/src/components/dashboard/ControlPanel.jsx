@@ -1,5 +1,6 @@
 function ControlPanel({
   connected,
+  operatingMode,
   engineStatus,
   status,
   targetX,
@@ -40,13 +41,13 @@ function ControlPanel({
       <h1>Mission Control</h1>
       <div className="control-mode-row">
         <span>Mode</span>
-        <strong>SIMULATION</strong>
+        <strong>{operatingMode ? operatingMode.toUpperCase() : "SIMULATION"}</strong>
       </div>
       <div className="engine-actions">
         <button
           className="button button-start"
           onClick={() => onCommand("start")}
-          disabled={engineStatus === "running"}
+          disabled={engineStatus === "running" || engineStatus === "running_webcam" || engineStatus === "webcam_loading"}
         >
           <span className="button-icon" aria-hidden="true">
             &#9654;
@@ -63,6 +64,7 @@ function ControlPanel({
         <button
           className="button button-restart"
           onClick={() => onCommand("restart")}
+          disabled={engineStatus === "stopped" || engineStatus === "webcam_loading"}
         >
           RESTART
         </button>
@@ -78,10 +80,16 @@ function ControlPanel({
           Engine{" "}
           <strong
             className={
-              engineStatus === "running" ? "status-good" : "status-bad"
+              engineStatus === "running" || engineStatus === "running_webcam" || engineStatus === "webcam_loading"
+                ? "status-good"
+                : "status-bad"
             }
           >
-            {engineStatus === "running" ? "RUNNING" : "STOPPED"}
+            {engineStatus === "running" || engineStatus === "running_webcam"
+              ? "RUNNING"
+              : engineStatus === "webcam_loading"
+                ? "LOADING"
+                : "STOPPED"}
           </strong>
         </div>
         <div>
