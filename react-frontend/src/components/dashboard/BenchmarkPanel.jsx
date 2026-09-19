@@ -17,6 +17,8 @@ function BenchmarkPanel({
   onConfigChange,
 }) {
   const isRunning = engineStatus === "running_benchmark";
+  const isLoading = engineStatus === "benchmark_loading";
+  const isBusy = isRunning || isLoading;
 
   const update = (key, value, setter) => {
     if (setter) setter(value);
@@ -76,7 +78,7 @@ function BenchmarkPanel({
           className="button button-start"
           type="button"
           onClick={onStart}
-          disabled={!benchmarkFile || isRunning || isUploading}
+          disabled={!benchmarkFile || isBusy || isUploading}
         >
           ▶ START
         </button>
@@ -84,7 +86,7 @@ function BenchmarkPanel({
           className="button button-stop"
           type="button"
           onClick={onStop}
-          disabled={!isRunning}
+          disabled={!isBusy}
         >
           ■ STOP
         </button>
@@ -92,7 +94,7 @@ function BenchmarkPanel({
           className="button button-restart"
           type="button"
           onClick={onReset}
-          disabled={isRunning}
+          disabled={isBusy}
         >
           ↺ RESET
         </button>
@@ -105,8 +107,8 @@ function BenchmarkPanel({
         </div>
         <div>
           Engine{" "}
-          <strong className={isRunning ? "status-good" : "status-bad"}>
-            {isRunning ? "RUNNING" : "STOPPED"}
+          <strong className={isRunning ? "status-good" : isLoading ? "status-warn" : "status-bad"}>
+            {isRunning ? "RUNNING" : isLoading ? "LOADING…" : "STOPPED"}
           </strong>
         </div>
         <div>

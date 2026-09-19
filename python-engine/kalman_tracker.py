@@ -66,10 +66,12 @@ class KalmanTracker:
         cam_width=640,
         cam_height=480,
         world_size=2000,
+        video_mode=False,
     ):
         self.cam_width = cam_width
         self.cam_height = cam_height
         self.world_size = world_size
+        self.video_mode = video_mode
 
         # --- KALMAN FILTER (6D State: [x, y, dx, dy, ddx, ddy]) ---
         self.kf = cv2.KalmanFilter(6, 2)
@@ -111,17 +113,18 @@ class KalmanTracker:
 
         # --- CNN DETECTOR ---
         self.cnn_model = None
-        try:
-            cnn_path = os.path.join(
+        if not self.video_mode:
+            try:
+                cnn_path = os.path.join(
                 os.path.dirname(__file__), "cnn_detector", "cnn_beacon.pth"
             )
-            if os.path.exists(cnn_path):
-                self.cnn_model = BeaconCNN()
-                self.cnn_model.load_state_dict(torch.load(cnn_path))
-                self.cnn_model.eval()
-                print("[KalmanTracker] Loaded CNN Detector successfully!")
-        except Exception as e:
-            print(f"[KalmanTracker] Error loading CNN: {e}")
+                if os.path.exists(cnn_path):
+                    self.cnn_model = BeaconCNN()
+                    self.cnn_model.load_state_dict(torch.load(cnn_path))
+                    self.cnn_model.eval()
+                    print("[KalmanTracker] Loaded CNN Detector successfully!")
+            except Exception as e:
+                print(f"[KalmanTracker] Error loading CNN: {e}")
 
         # --- GRU SEQUENCE PREDICTOR ---
         self.gru_models = {}
@@ -496,75 +499,167 @@ class KalmanTracker:
         # ----------------------------------------------------------
         #  ROBUST COMPUTER VISION PIPELINE (Environment-Adaptive)
         # ----------------------------------------------------------
-        thresh, enhanced = self._adaptive_preprocess(frame, env_params)
-
-        contours, _ = cv2.findContours(
-            thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
         best_contour = None
         max_area = 0
         best_confidence = 0.0
 
-        atmospheric = env_params.get("atmospheric", "Clear")
-        if atmospheric == "Rain":
-            area_min, area_max = 30, 600
-        else:
-            area_min, area_max = 15, 1000
+        if self.video_mode:
+            # ── Kalman-gated brightness search ─────────────────────────────────────
+            # IMPORTANT: This entire block is video_mode only.
+            # The simulation else-branch below is completely unaffected.
+            #
+            # Problem with old approach: raw global minMaxLoc grabbed whatever pixel
+            # was brightest in the whole frame — when target hides behind an obstacle,
+            # any other bright region would steal the lock and Kalman coasting never
+            # activated.
+            #
+            # Fix: only search for bright pixels within a radius of where the Kalman
+            # filter predicts the target should be. If nothing qualifies → confidence
+            # stays 0.0 → the existing LOST / KALMAN COASTING path activates.
 
-        # In degraded atmospheres (Fog/Haze), the CNN was trained on clear images
-        # and will score fog-blended crops near zero. Use the enhanced (background-
-        # subtracted) image for CNN crops so the beacon is visible to the network.
-        # If CNN still can't score anything above threshold, fall back to area heuristic.
-        use_enhanced_crop = atmospheric in ("Fog", "Haze")
+            if not hasattr(self, "target_brightness"):
+                self.target_brightness = 100.0  # Absolute minimum baseline
 
-        for c in contours:
-            area = cv2.contourArea(c)
-            if area_min < area < area_max:
-                M = cv2.moments(c)
-                if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
+            no_history = len(self.measurement_history) == 0
 
-                    if self.cnn_model is not None:
-                        x_min = max(0, cx - 16)
-                        y_min = max(0, cy - 16)
-                        x_max = min(self.cam_width, cx + 16)
-                        y_max = min(self.cam_height, cy + 16)
+            if no_history:
+                # ── First-ever acquisition ─────────────────────────────────────────
+                blurred = cv2.GaussianBlur(frame, (25, 25), 0)
+                _, max_val, _, max_loc = cv2.minMaxLoc(blurred)
+                if max_val > 100:  # Absolute minimum
+                    best_confidence = 0.95
+                    tx, ty = max_loc
+                    best_contour = np.array(
+                        [[[tx, ty]], [[tx + 1, ty]], [[tx + 1, ty + 1]], [[tx, ty + 1]]],
+                        dtype=np.int32,
+                    )
+                    self.target_brightness = max_val
+            else:
+                last_world_x, last_world_y = self.measurement_history[-1]
+                
+                if self.lost_frames == 0:
+                    # ── Normal operation: Kalman-gated ROI search ──────────────────────
+                    GATE_RADIUS = 60  # Tight gate to avoid background noise when tracking
+                    
+                    pred_vp_x = int(pred_world_x - cam_x)
+                    pred_vp_y = int(pred_world_y - cam_y)
+                    
+                    rx1 = max(0, pred_vp_x - GATE_RADIUS)
+                    ry1 = max(0, pred_vp_y - GATE_RADIUS)
+                    rx2 = min(self.cam_width,  pred_vp_x + GATE_RADIUS)
+                    ry2 = min(self.cam_height, pred_vp_y + GATE_RADIUS)
 
-                        # Crop from enhanced image in fog/haze so CNN sees the beacon
-                        src = enhanced if use_enhanced_crop else frame
-                        crop = src[y_min:y_max, x_min:x_max]
-                        if crop.shape[0] > 0 and crop.shape[1] > 0:
-                            if crop.shape != (32, 32):
-                                crop = cv2.resize(crop, (32, 32))
-                            crop_norm = crop.astype(np.float32) / 255.0
-                            crop_tensor = (
-                                torch.tensor(crop_norm).unsqueeze(0).unsqueeze(0)
+                    if rx2 > rx1 and ry2 > ry1:
+                        blurred = cv2.GaussianBlur(frame, (25, 25), 0)
+                        roi = blurred[ry1:ry2, rx1:rx2]
+                        _, max_val, _, local_loc = cv2.minMaxLoc(roi)
+
+                        # Must match expected beacon brightness (at least 70%)
+                        if max_val > (self.target_brightness * 0.7) and max_val > 50:
+                            best_confidence = 0.95
+                            tx = rx1 + local_loc[0]
+                            ty = ry1 + local_loc[1]
+                            best_contour = np.array(
+                                [[[tx, ty]], [[tx + 1, ty]], [[tx + 1, ty + 1]], [[tx, ty + 1]]],
+                                dtype=np.int32,
                             )
+                            # Update running average of beacon brightness
+                            self.target_brightness = 0.8 * self.target_brightness + 0.2 * max_val
+                else:
+                    # ── Coasting: Full-viewport search with proximity guard ────────────
+                    # During coasting, the Kalman prediction drifts. We search the whole 
+                    # viewport but reject candidates too far from the last known position.
+                    MAX_REACQ_DIST = 450  # world-px from last known
+                    
+                    blurred = cv2.GaussianBlur(frame, (25, 25), 0)
+                    _, max_val, _, max_loc = cv2.minMaxLoc(blurred)
+                    
+                    # Stricter brightness check for re-acquisition to ignore background
+                    if max_val > (self.target_brightness * 0.75) and max_val > 50:
+                        tx, ty = max_loc
+                        detected_world_x = cam_x + tx
+                        detected_world_y = cam_y + ty
+                        
+                        dist_to_last = math.sqrt(
+                            (detected_world_x - last_world_x) ** 2
+                            + (detected_world_y - last_world_y) ** 2
+                        )
+                        
+                        # Re-acquire only if it's within a reasonable distance of where we lost it
+                        if dist_to_last <= MAX_REACQ_DIST:
+                            best_confidence = 0.95
+                            best_contour = np.array(
+                                [[[tx, ty]], [[tx + 1, ty]], [[tx + 1, ty + 1]], [[tx, ty + 1]]],
+                                dtype=np.int32,
+                            )
+                            self.target_brightness = 0.8 * self.target_brightness + 0.2 * max_val
+        else:
+            thresh, enhanced = self._adaptive_preprocess(frame, env_params)
 
-                            with torch.no_grad():
-                                conf = self.cnn_model(crop_tensor).item()
+            contours, _ = cv2.findContours(
+                thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
 
-                            if conf > best_confidence:
-                                best_confidence = conf
-                                best_contour = c
+            atmospheric = env_params.get("atmospheric", "Clear")
+            if atmospheric == "Rain":
+                area_min, area_max = 30, 600
+            else:
+                area_min, area_max = 15, 1000
 
-                        # Area fallback: if CNN still gives nothing useful in fog,
+            # In degraded atmospheres (Fog/Haze), the CNN was trained on clear images
+            # and will score fog-blended crops near zero. Use the enhanced (background-
+            # subtracted) image for CNN crops so the beacon is visible to the network.
+            # If CNN still can't score anything above threshold, fall back to area heuristic.
+            use_enhanced_crop = atmospheric in ("Fog", "Haze")
+
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area_min < area < area_max:
+                    M = cv2.moments(c)
+                    if M["m00"] != 0:
+                        cx = int(M["m10"] / M["m00"])
+                        cy = int(M["m01"] / M["m00"])
+
+                        if self.cnn_model is not None:
+                            x_min = max(0, cx - 16)
+                            y_min = max(0, cy - 16)
+                            x_max = min(self.cam_width, cx + 16)
+                            y_max = min(self.cam_height, cy + 16)
+
+                            # Crop from enhanced image in fog/haze so CNN sees the beacon
+                            src = enhanced if use_enhanced_crop else frame
+                            crop = src[y_min:y_max, x_min:x_max]
+                            if crop.shape[0] > 0 and crop.shape[1] > 0:
+                                if crop.shape != (32, 32):
+                                    crop = cv2.resize(crop, (32, 32))
+                                crop_norm = crop.astype(np.float32) / 255.0
+                                crop_tensor = (
+                                    torch.tensor(crop_norm).unsqueeze(0).unsqueeze(0)
+                                )
+
+                                with torch.no_grad():
+                                    conf = self.cnn_model(crop_tensor).item()
+
+                                if conf > best_confidence:
+                                    best_confidence = conf
+                                    best_contour = c
+
+                        # Area fallback: if CNN is missing, or if CNN still gives nothing useful in fog,
                         # pick the largest valid blob (beacon is the only bright residual
                         # after background subtraction, so this is reliable).
-                        if use_enhanced_crop and best_confidence < 0.1:
-                            if area > max_area:
-                                max_area = area
-                                best_contour = c
-                                # Assign synthetic confidence — lower than clear tracking
-                                # but above LOST threshold so Kalman stays engaged.
-                                best_confidence = 0.55
-                    else:
-                        if area > max_area:
-                            max_area = area
-                            best_contour = c
-                            best_confidence = 0.95 if 50 < max_area < 500 else 0.60
+                        if self.cnn_model is None or best_confidence < 0.1:
+                            if use_enhanced_crop and best_confidence < 0.1:
+                                if area > max_area:
+                                    max_area = area
+                                    best_contour = c
+                                    # Assign synthetic confidence — lower than clear tracking
+                                    # but above LOST threshold so Kalman stays engaged.
+                                    best_confidence = 0.55
+                            else:
+                                if area > max_area:
+                                    max_area = area
+                                    best_contour = c
+                                    best_confidence = 0.95 if 50 < max_area < 500 else 0.60
 
         error_x = 0
         error_y = 0
@@ -685,24 +780,49 @@ class KalmanTracker:
                     self.kf.statePost[2, 0] = true_vx
                     self.kf.statePost[3, 0] = true_vy
 
+                    # Generate a pure li near physics prediction for the UI to draw
+                    self.gru_sequence = []
+                    curr_x = self.kf.statePost[0, 0]
+                    curr_y = self.kf.statePost[1, 0]
+                    for _ in range(50):
+                        curr_x += true_vx
+                        curr_y += true_vy
+                        self.gru_sequence.append([curr_x, curr_y])
+
+                    self.gru_full_buffer = (
+                        list(self.measurement_history[-120:]) + self.gru_sequence.copy()
+                    )
+                    self.reacq_active = False
+
                     log_msg = f"[KalmanTracker] Target LOST! Linear Coasting at ({true_vx:.1f}, {true_vy:.1f}) px/frame"
 
             # === ROLLING PREDICTION ===
-            if (
-                self.gru_sequence
-                and len(self.gru_sequence) < 30
-                and self.current_path_key in self.gru_models
-            ):
-                sw = 3 if self.current_path_key in ("spiral", "figureof8") else 5
-                tail_history = self.gru_full_buffer[-120:]
-                new_prediction = self._generate_gru_prediction(
-                    tail_history, self.current_path_key, sw
-                )
-                if new_prediction:
+            if self.gru_sequence and len(self.gru_sequence) < 30:
+                if self.current_path_key in self.gru_models:
+                    sw = 3 if self.current_path_key in ("spiral", "figureof8") else 5
+                    tail_history = self.gru_full_buffer[-120:]
+                    new_prediction = self._generate_gru_prediction(
+                        tail_history, self.current_path_key, sw
+                    )
+                    if new_prediction:
+                        self.gru_sequence.extend(new_prediction)
+                        self.gru_full_buffer.extend(new_prediction)
+                else:
+                    # Rolling Linear Replenishment
+                    true_vx = self.kf.statePost[2, 0]
+                    true_vy = self.kf.statePost[3, 0]
+                    last_pt = self.gru_sequence[-1]
+                    curr_x, curr_y = last_pt[0], last_pt[1]
+                    new_prediction = []
+                    for _ in range(20):
+                        curr_x += true_vx
+                        curr_y += true_vy
+                        new_prediction.append([curr_x, curr_y])
                     self.gru_sequence.extend(new_prediction)
                     self.gru_full_buffer.extend(new_prediction)
-                    if len(self.gru_full_buffer) > 500:
-                        self.gru_full_buffer = self.gru_full_buffer[-300:]
+
+                if len(self.gru_full_buffer) > 500:
+                    self.gru_full_buffer = self.gru_full_buffer[-300:]
 
             # FORCE ZERO ACCELERATION
             self.kf.statePre[4, 0] = 0.0

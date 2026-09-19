@@ -32,16 +32,34 @@ function useVideoBenchmark({
 
   const isRunning = engineStatus === "running_benchmark";
 
+  // Track video FPS so we can seek to the exact frame Python just processed
+  const videoFpsRef = useRef(30);
+
   useEffect(() => {
     const handleBenchmarkComplete = (data) => {
       if (videoRef.current) videoRef.current.pause();
       setBenchmarkSummary(data.summary);
     };
+
+    // FIX 1+5: Play video ONLY when Python signals it is ready (not before)
+    const handleBenchmarkStarted = (data) => {
+      videoFpsRef.current = data.video_fps || 30;
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => {});
+      }
+    };
+
     socket.on("benchmark_complete", handleBenchmarkComplete);
-    return () => socket.off("benchmark_complete", handleBenchmarkComplete);
+    socket.on("benchmark_started", handleBenchmarkStarted);
+    return () => {
+      socket.off("benchmark_complete", handleBenchmarkComplete);
+      socket.off("benchmark_started", handleBenchmarkStarted);
+    };
   }, [socket]);
 
   useEffect(() => {
+    // Pause when not running
     if (!isRunning && videoRef.current && !videoRef.current.paused) {
       videoRef.current.pause();
     }
@@ -73,9 +91,10 @@ function useVideoBenchmark({
     if (!benchmarkFile || isRunning) return;
     setBenchmarkSummary(null);
     onClearTelemetry();
+    // Reset video to frame 0 but do NOT play yet — wait for benchmark_started from server
     if (videoRef.current) {
+      videoRef.current.pause();
       videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
     }
     socket.emit("start_benchmark", { video_path: benchmarkFile.path });
     setTimeout(() => {
@@ -130,6 +149,10 @@ function useVideoBenchmark({
   // This prevents the video from being squeezed and prevents size jumping at START.
   const worldW = worldDims.w;
   const worldH = worldDims.h;
+
+  // FIX 2: camera position comes directly from live benchmark telemetry
+  const camHudX = telemetry?.camera?.x ?? 0;
+  const camHudY = telemetry?.camera?.y ?? 0;
 
   const stage = (
     <main className="simulation-stage">
@@ -191,6 +214,16 @@ function useVideoBenchmark({
             <div>Upload a video in the panel to begin</div>
           </div>
         )}
+
+        {/* FIX 4: Frame-sync — seek video to the exact frame Python just processed */}
+        {telemetry?.frame && videoRef.current && isRunning && (() => {
+          const target = telemetry.frame / videoFpsRef.current;
+          // Only seek if more than 0.3s out of sync to avoid jitter
+          if (Math.abs(videoRef.current.currentTime - target) > 0.3) {
+            videoRef.current.currentTime = target;
+          }
+          return null;
+        })()}
 
         {/* Live overlays — only render when telemetry is flowing */}
         {telemetry && (
@@ -284,12 +317,12 @@ function useVideoBenchmark({
               />
             )}
 
-            {/* PTZ Camera Viewport HUD — identical to simulation mode */}
+            {/* PTZ Camera Viewport HUD — FIX 2: uses telemetry camera position */}
             <div
               style={{
                 position: "absolute",
-                left: `${camX}px`,
-                top: `${camY}px`,
+                left: `${camHudX}px`,
+                top: `${camHudY}px`,
                 width: "640px",
                 height: "480px",
                 border: "1px solid rgba(0, 255, 0, 0.2)",
