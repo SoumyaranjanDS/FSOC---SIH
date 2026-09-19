@@ -23,29 +23,31 @@ import threading
 import random
 import json
 
-# Allow importing from same directory
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from video_tracker import VideoTracker
+# Allow importing from parent directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from kalman_tracker import KalmanTracker
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  CONSTANTS  (same as simulation_engine.py per PDF SIH-26169)
 # ──────────────────────────────────────────────────────────────────────────────
-CAM_W      = 640
-CAM_H      = 480
-MAX_SPEED  = 26.66          # px/frame  ← 5°/sec × (640px/4°FOV) / 30FPS
+CAM_W = 640
+CAM_H = 480
+MAX_SPEED = 26.66  # px/frame  ← 5°/sec × (640px/4°FOV) / 30FPS
 
 # Adaptive Clear environment — tracker auto-tunes to video content
 ENV_PARAMS = {
-    "atmospheric":     "Clear",
-    "noise_type":      "None",
-    "noise_std":       20,
-    "camera_jitter":   0,
+    "atmospheric": "Clear",
+    "noise_type": "None",
+    "noise_std": 20,
+    "camera_jitter": 0,
     "platform_motion": "None",
 }
+
 
 def stdin_listener():
     """Background thread to listen for commands from the Node Server"""
     import json
+
     for line in sys.stdin:
         try:
             cmd = json.loads(line)
@@ -62,6 +64,7 @@ def stdin_listener():
         except Exception:
             pass
 
+
 # Start the listener thread
 threading.Thread(target=stdin_listener, daemon=True).start()
 
@@ -72,59 +75,112 @@ def clamp(v, lo, hi):
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"mode": "benchmark", "event": "error",
-                          "message": "No video path provided"}), flush=True)
+        print(
+            json.dumps(
+                {
+                    "mode": "benchmark",
+                    "event": "error",
+                    "message": "No video path provided",
+                }
+            ),
+            flush=True,
+        )
         sys.exit(1)
 
     video_path = sys.argv[1]
 
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
     if not cap.isOpened():
-        print(json.dumps({"mode": "benchmark", "event": "error",
-                          "message": f"Cannot open video: {video_path}"}), flush=True)
+        cap = cv2.VideoCapture(video_path)
+
+    if not cap.isOpened():
+        print(
+            json.dumps(
+                {
+                    "mode": "benchmark",
+                    "event": "error",
+                    "message": f"Cannot open video: {video_path}",
+                }
+            ),
+            flush=True,
+        )
         sys.exit(1)
 
-    VID_W        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    VID_H        = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    VID_W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    VID_H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    video_fps    = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    frame_delay  = 1.0 / video_fps
+    video_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    frame_delay = 1.0 / video_fps
 
-    # Initialize camera to center
-    cam_x = float(clamp((VID_W - CAM_W) // 2, 0, max(0, VID_W - CAM_W)))
-    cam_y = float(clamp((VID_H - CAM_H) // 2, 0, max(0, VID_H - CAM_H)))
+    cam_x = (VID_W - CAM_W) // 2
+    cam_y = (VID_H - CAM_H) // 2
 
-    tracker = VideoTracker(
-        VID_W // 2, VID_H // 2,   # initial cam position estimate
-        CAM_W, CAM_H,
-        max(VID_W, VID_H)          # world size = video dimensions
+    # Attempt to auto-initialize camera to the brightest spot (missile) in the first frame
+    ret, first_frame = cap.read()
+    if ret:
+        gray = (
+            cv2.cvtColor(first_frame, cv2.COLOR_BGR2GRAY)
+            if len(first_frame.shape) == 3
+            else first_frame
+        )
+        blurred = cv2.GaussianBlur(gray, (25, 25), 0)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(blurred)
+        if max_val > 150:
+            cam_x = clamp(max_loc[0] - CAM_W // 2, 0, max(0, VID_W - CAM_W))
+            cam_y = clamp(max_loc[1] - CAM_H // 2, 0, max(0, VID_H - CAM_H))
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    tracker = KalmanTracker(
+        cam_x + CAM_W // 2,
+        cam_y + CAM_H // 2,  # initial cam position estimate
+        CAM_W,
+        CAM_H,
+        max(VID_W, VID_H),  # world size = video dimensions
+        video_mode=True,
     )
 
-    # ── Metrics ──────────────────────────────────────────────────────────────
-    frame_count       = 0
-    start_time        = time.time()
-    locked_frames     = 0
-    lost_frames       = 0
-    total_rmse        = 0.0
-    sum_sq_rmse       = 0.0
-    max_error         = 0.0
-    acquisition_time  = None
-    acq_achieved      = False
-    last_lost_time    = None
-    reacq_times       = []
-    rmse_history      = []
-    frame_log         = []
-    centroid_trail    = []   # last 60 centroid positions for UI trail
+    # ── Area-of-Interest (AOI) constraint ─────────────────────────────────────
+    # Keeps the camera anchored near the last confirmed detection during coasting.
+    # Prevents the camera from flying off to wrong predictions in unknown videos.
+    AOI_RADIUS = (
+        300  # world-px: max distance camera center can wander from last detection
+    )
+    last_confirmed_x = float(
+        cam_x + CAM_W // 2
+    )  # world coords of last confirmed detection
+    last_confirmed_y = float(cam_y + CAM_H // 2)
 
-    print(json.dumps({
-        "mode":          "benchmark",
-        "event":         "started",
-        "video_width":   VID_W,
-        "video_height":  VID_H,
-        "total_frames":  total_frames,
-        "video_fps":     video_fps,
-        "video_path":    video_path,
-    }), flush=True)
+    # ── Metrics ──────────────────────────────────────────────────────────────
+    frame_count = 0
+    start_time = time.time()
+    locked_frames = 0
+    lost_frames = 0
+    total_rmse = 0.0
+    sum_sq_rmse = 0.0
+    max_error = 0.0
+    acquisition_time = None
+    acq_achieved = False
+    last_lost_time = None
+    reacq_times = []
+    rmse_history = []
+    frame_log = []
+    centroid_trail = []  # last 60 centroid positions for UI trail
+
+    print(
+        json.dumps(
+            {
+                "mode": "benchmark",
+                "event": "started",
+                "video_width": VID_W,
+                "video_height": VID_H,
+                "total_frames": total_frames,
+                "video_fps": video_fps,
+                "video_path": video_path,
+            }
+        ),
+        flush=True,
+    )
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     while cap.isOpened():
@@ -137,17 +193,28 @@ def main():
         frame_count += 1
 
         # Convert to grayscale — tracker is grayscale-only
-        gray = cv2.cvtColor(full_frame, cv2.COLOR_BGR2GRAY) \
-               if len(full_frame.shape) == 3 else full_frame.copy()
+        gray = (
+            cv2.cvtColor(full_frame, cv2.COLOR_BGR2GRAY)
+            if len(full_frame.shape) == 3
+            else full_frame.copy()
+        )
 
         # ── Crop virtual viewport ─────────────────────────────────────────────
         # Apply camera jitter to the viewport crop location
-        jitter_x = random.randint(-ENV_PARAMS["camera_jitter"], ENV_PARAMS["camera_jitter"]) if ENV_PARAMS["camera_jitter"] > 0 else 0
-        jitter_y = random.randint(-ENV_PARAMS["camera_jitter"], ENV_PARAMS["camera_jitter"]) if ENV_PARAMS["camera_jitter"] > 0 else 0
+        jitter_x = (
+            random.randint(-ENV_PARAMS["camera_jitter"], ENV_PARAMS["camera_jitter"])
+            if ENV_PARAMS["camera_jitter"] > 0
+            else 0
+        )
+        jitter_y = (
+            random.randint(-ENV_PARAMS["camera_jitter"], ENV_PARAMS["camera_jitter"])
+            if ENV_PARAMS["camera_jitter"] > 0
+            else 0
+        )
 
-        x1       = int(clamp(cam_x + jitter_x, 0, max(0, VID_W - CAM_W)))
-        y1       = int(clamp(cam_y + jitter_y, 0, max(0, VID_H - CAM_H)))
-        viewport = gray[y1: y1 + CAM_H, x1: x1 + CAM_W].copy()
+        x1 = int(clamp(cam_x + jitter_x, 0, max(0, VID_W - CAM_W)))
+        y1 = int(clamp(cam_y + jitter_y, 0, max(0, VID_H - CAM_H)))
+        viewport = gray[y1 : y1 + CAM_H, x1 : x1 + CAM_W].copy()
 
         # ── Apply Atmospheric Effects & Noise to Viewport ─────────────────────
         atm = ENV_PARAMS["atmospheric"]
@@ -165,7 +232,9 @@ def main():
                 for _ in range(100):
                     rx = random.randint(-50, CAM_W + 50)
                     ry = random.randint(-50, CAM_H + 50)
-                    cv2.line(rain_overlay, (rx, ry), (rx - 10, ry + 30), (150, 150, 150), 1)
+                    cv2.line(
+                        rain_overlay, (rx, ry), (rx - 10, ry + 30), (150, 150, 150), 1
+                    )
                 viewport = cv2.addWeighted(rain_overlay, 0.4, viewport, 0.6, 0)
 
         noise = ENV_PARAMS["noise_type"]
@@ -178,9 +247,13 @@ def main():
                 viewport[rnd > 1 - (prob / 2)] = 255
             elif noise == "Gaussian":
                 gauss = np.random.normal(0, std_dev, (CAM_H, CAM_W)).astype(np.float32)
-                viewport = np.clip(viewport.astype(np.float32) + gauss, 0, 255).astype(np.uint8)
+                viewport = np.clip(viewport.astype(np.float32) + gauss, 0, 255).astype(
+                    np.uint8
+                )
             elif noise == "Poisson":
-                noisy = np.random.poisson(viewport.astype(np.float32) / (std_dev + 1)) * (std_dev + 1)
+                noisy = np.random.poisson(
+                    viewport.astype(np.float32) / (std_dev + 1)
+                ) * (std_dev + 1)
                 viewport = np.clip(noisy, 0, 255).astype(np.uint8)
 
         # ── Run tracking pipeline ─────────────────────────────────────────────
@@ -188,19 +261,41 @@ def main():
             viewport, cam_x, cam_y, "Random", [], ENV_PARAMS
         )
 
-        # ── PTZ motor physics (matched perfectly to simulation_engine.py) ─────
+        # ── PTZ motor physics (matched to simulation_engine.py) ───────────────
+        # During coasting, reduce gain so camera drifts gently instead of flying
+        # aggressively toward a potentially wrong prediction. The AOI clamp below
+        # will catch it if it still wanders too far.
+        is_coasting = status_str in ("KALMAN COASTING", "LOST")
+        gain = 0.3 if is_coasting else 0.8
+
         cam_dx = 0
         cam_dy = 0
         if abs(error_x) > 2:
-            cam_dx = error_x * 0.8
+            cam_dx = error_x * gain
         if abs(error_y) > 2:
-            cam_dy = error_y * 0.8
+            cam_dy = error_y * gain
 
         cam_dx = clamp(cam_dx, -MAX_SPEED, MAX_SPEED)
         cam_dy = clamp(cam_dy, -MAX_SPEED, MAX_SPEED)
 
-        cam_x  = clamp(cam_x + cam_dx, 0, max(0, VID_W - CAM_W))
-        cam_y  = clamp(cam_y + cam_dy, 0, max(0, VID_H - CAM_H))
+        cam_x = clamp(cam_x + cam_dx, 0, max(0, VID_W - CAM_W))
+        cam_y = clamp(cam_y + cam_dy, 0, max(0, VID_H - CAM_H))
+
+        # ── AOI constraint — keep camera near last confirmed detection ─────────
+        if is_coasting:
+            cam_center_x = cam_x + CAM_W // 2
+            cam_center_y = cam_y + CAM_H // 2
+            dist_from_aoi = math.sqrt(
+                (cam_center_x - last_confirmed_x) ** 2
+                + (cam_center_y - last_confirmed_y) ** 2
+            )
+            if dist_from_aoi > AOI_RADIUS:
+                # Pull camera back to the AOI boundary
+                ratio = AOI_RADIUS / dist_from_aoi
+                new_cx = last_confirmed_x + (cam_center_x - last_confirmed_x) * ratio
+                new_cy = last_confirmed_y + (cam_center_y - last_confirmed_y) * ratio
+                cam_x = clamp(int(new_cx - CAM_W // 2), 0, max(0, VID_W - CAM_W))
+                cam_y = clamp(int(new_cy - CAM_H // 2), 0, max(0, VID_H - CAM_H))
 
         # ── Metrics update ────────────────────────────────────────────────────
         centroid_x = cam_x + CAM_W // 2 + error_x
@@ -208,6 +303,9 @@ def main():
 
         if status_str == "TRACKING":
             locked_frames += 1
+            # Update AOI anchor to confirmed detection position
+            last_confirmed_x = float(centroid_x)
+            last_confirmed_y = float(centroid_y)
             if not acq_achieved:
                 acquisition_time = time.time() - start_time
                 acq_achieved = True
@@ -219,9 +317,9 @@ def main():
             if last_lost_time is None and acq_achieved:
                 last_lost_time = time.time()
 
-        total_rmse   += rmse
-        sum_sq_rmse  += rmse ** 2
-        max_error     = max(max_error, rmse)
+        total_rmse += rmse
+        sum_sq_rmse += rmse**2
+        max_error = max(max_error, rmse)
 
         rmse_history.append(round(rmse, 2))
         if len(rmse_history) > 150:
@@ -232,50 +330,75 @@ def main():
             centroid_trail.pop(0)
 
         # ── Frame-level log ───────────────────────────────────────────────────
-        frame_log.append({
-            "frame":       frame_count,
-            "timestamp":   round(frame_count / video_fps, 3),
-            "cam_x":       cam_x,
-            "cam_y":       cam_y,
-            "centroid_x":  centroid_x,
-            "centroid_y":  centroid_y,
-            "error_x":     error_x,
-            "error_y":     error_y,
-            "rmse":        round(rmse, 2),
-            "status":      status_str,
-        })
+        frame_log.append(
+            {
+                "frame": frame_count,
+                "timestamp": round(frame_count / video_fps, 3),
+                "cam_x": cam_x,
+                "cam_y": cam_y,
+                "centroid_x": centroid_x,
+                "centroid_y": centroid_y,
+                "error_x": error_x,
+                "error_y": error_y,
+                "rmse": round(rmse, 2),
+                "status": status_str,
+            }
+        )
 
         # ── Running stats ─────────────────────────────────────────────────────
-        elapsed  = time.time() - start_time
-        fps_now  = frame_count / elapsed if elapsed > 0 else video_fps
-        avg_err  = total_rmse / frame_count
-        lock_rt  = (locked_frames / frame_count) * 100
+        elapsed = time.time() - start_time
+        fps_now = frame_count / elapsed if elapsed > 0 else video_fps
+        avg_err = total_rmse / frame_count
+        lock_rt = (locked_frames / frame_count) * 100
 
         # ── Telemetry JSON ────────────────────────────────────────────────────
         telemetry = {
-            "mode":          "benchmark",
-            "frame":         frame_count,
-            "total_frames":  total_frames,
-            "progress":      round(frame_count / total_frames, 4) if total_frames > 0 else 0,
-            "camera":        {"x": cam_x, "y": cam_y},
-            "centroid":      {"x": centroid_x, "y": centroid_y},
+            "mode": "benchmark",
+            "frame": frame_count,
+            "total_frames": total_frames,
+            "progress": round(frame_count / total_frames, 4) if total_frames > 0 else 0,
+            "camera": {"x": cam_x, "y": cam_y},
+            "centroid": {"x": centroid_x, "y": centroid_y},
             "centroid_trail": centroid_trail,
-            "error":         {"x": error_x, "y": error_y, "rmse": round(rmse, 2)},
-            "status":        status_str,
-            "rmse_history":  rmse_history,
-            "video":         {"width": VID_W, "height": VID_H},
+            "error": {"x": error_x, "y": error_y, "rmse": round(rmse, 2)},
+            "status": status_str,
+            "rmse_history": rmse_history,
+            "video": {"width": VID_W, "height": VID_H},
             "performance": {
-                "fps":              round(fps_now, 1),
-                "avg_error":        round(avg_err, 2),
-                "max_error":        round(max_error, 2),
+                "fps": round(fps_now, 1),
+                "avg_error": round(avg_err, 2),
+                "max_error": round(max_error, 2),
                 "lock_retention_rate": round(lock_rt, 1),
-                "acquisition_time": round(acquisition_time, 3) if acquisition_time else None,
-                "avg_reacq_time":   round(sum(reacq_times) / len(reacq_times), 3)
-                                    if reacq_times else None,
+                "acquisition_time": (
+                    round(acquisition_time, 3) if acquisition_time else None
+                ),
+                "avg_reacq_time": (
+                    round(sum(reacq_times) / len(reacq_times), 3)
+                    if reacq_times
+                    else None
+                ),
             },
         }
         if log_msg:
             telemetry["log"] = log_msg
+
+        # AOI visualization data — always include so UI can render the constraint
+        telemetry["aoi"] = {
+            "center_x": int(last_confirmed_x),
+            "center_y": int(last_confirmed_y),
+            "radius": AOI_RADIUS,
+        }
+
+        # Provide coasting visualization data to the UI
+        if status_str == "KALMAN COASTING":
+            telemetry["coasting_coord"] = {
+                "x": int(tracker.kf.statePre[0, 0]),
+                "y": int(tracker.kf.statePre[1, 0]),
+            }
+            if hasattr(tracker, "gru_sequence") and tracker.gru_sequence:
+                telemetry["predicted_path"] = [
+                    {"x": int(p[0]), "y": int(p[1])} for p in tracker.gru_sequence[:50]
+                ]
 
         print(json.dumps(telemetry), flush=True)
 
@@ -289,21 +412,29 @@ def main():
     # ── Final metrics ─────────────────────────────────────────────────────────
     rmse_overall = math.sqrt(sum_sq_rmse / frame_count) if frame_count > 0 else 0.0
     final_summary = {
-        "total_frames":        frame_count,
-        "duration_sec":        round(frame_count / video_fps, 2),
-        "processing_fps":      round(frame_count / (time.time() - start_time), 1),
-        "acquisition_time_sec": round(acquisition_time, 3) if acquisition_time else None,
-        "avg_centroid_error":  round(total_rmse / frame_count, 2) if frame_count > 0 else 0,
-        "max_centroid_error":  round(max_error, 2),
-        "rmse_overall":        round(rmse_overall, 2),
-        "lock_retention_rate": round(locked_frames / frame_count * 100, 1) if frame_count > 0 else 0,
-        "avg_reacquisition_sec": round(sum(reacq_times) / len(reacq_times), 3) if reacq_times else None,
-        "total_reacquisitions":  len(reacq_times),
+        "total_frames": frame_count,
+        "duration_sec": round(frame_count / video_fps, 2),
+        "processing_fps": round(frame_count / (time.time() - start_time), 1),
+        "acquisition_time_sec": (
+            round(acquisition_time, 3) if acquisition_time else None
+        ),
+        "avg_centroid_error": (
+            round(total_rmse / frame_count, 2) if frame_count > 0 else 0
+        ),
+        "max_centroid_error": round(max_error, 2),
+        "rmse_overall": round(rmse_overall, 2),
+        "lock_retention_rate": (
+            round(locked_frames / frame_count * 100, 1) if frame_count > 0 else 0
+        ),
+        "avg_reacquisition_sec": (
+            round(sum(reacq_times) / len(reacq_times), 3) if reacq_times else None
+        ),
+        "total_reacquisitions": len(reacq_times),
     }
 
     # ── Write CSV ─────────────────────────────────────────────────────────────
-    out_dir  = os.path.dirname(os.path.abspath(video_path))
-    csv_path  = os.path.join(out_dir, "benchmark_results.csv")
+    out_dir = os.path.dirname(os.path.abspath(video_path))
+    csv_path = os.path.join(out_dir, "benchmark_results.csv")
     json_path = os.path.join(out_dir, "benchmark_summary.json")
 
     if frame_log:
@@ -316,13 +447,18 @@ def main():
         json.dump(final_summary, f, indent=2)
 
     # ── Emit completion event ─────────────────────────────────────────────────
-    print(json.dumps({
-        "mode":      "benchmark",
-        "event":     "complete",
-        "summary":   final_summary,
-        "csv_path":  csv_path,
-        "json_path": json_path,
-    }), flush=True)
+    print(
+        json.dumps(
+            {
+                "mode": "benchmark",
+                "event": "complete",
+                "summary": final_summary,
+                "csv_path": csv_path,
+                "json_path": json_path,
+            }
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
