@@ -19,6 +19,7 @@ DELAY_MS = int(1000 / FPS)
 TARGET_MAX_SPEED = 15.0
 TARGET_PATH = "Random"
 OBSTACLES_ENABLED = False
+DUAL_TARGET_ENABLED = False
 
 NOISE_TYPE = "None"
 NOISE_STD_DEV = 20
@@ -29,17 +30,28 @@ PLATFORM_MOTION = "None"
 
 def stdin_listener():
     """Background thread to listen for commands from the Node Server"""
-    global TARGET_MAX_SPEED, TARGET_PATH, OBSTACLES_ENABLED
+    global TARGET_MAX_SPEED, TARGET_PATH, OBSTACLES_ENABLED, DUAL_TARGET_ENABLED
     global NOISE_TYPE, NOISE_STD_DEV, CAMERA_JITTER, ATMOSPHERIC, PLATFORM_MOTION
-    for line in sys.stdin:
+    while True:
         try:
-            cmd = json.loads(line)
-            if "target_speed" in cmd:
-                TARGET_MAX_SPEED = float(cmd["target_speed"])
+            line = sys.stdin.readline()
+            if not line:
+                break
+            cmd = json.loads(line.strip())
+            if "path" in cmd:
+                TARGET_PATH = cmd["path"]
             if "target_path" in cmd:
                 TARGET_PATH = cmd["target_path"]
+            if "speed" in cmd:
+                TARGET_MAX_SPEED = float(cmd["speed"])
+            if "target_speed" in cmd:
+                TARGET_MAX_SPEED = float(cmd["target_speed"])
+            if "obstacles" in cmd:
+                OBSTACLES_ENABLED = bool(cmd["obstacles"])
             if "obstacles_enabled" in cmd:
                 OBSTACLES_ENABLED = bool(cmd["obstacles_enabled"])
+            if "dual_target" in cmd:
+                DUAL_TARGET_ENABLED = bool(cmd["dual_target"])
             if "noise_type" in cmd:
                 NOISE_TYPE = cmd["noise_type"]
             if "noise_std_dev" in cmd:
@@ -82,11 +94,18 @@ def main():
     t_x, t_y = float(WORLD_SIZE // 2), float(WORLD_SIZE // 2)
     t_dx, t_dy = random.uniform(-10, 10), random.uniform(-10, 10)
 
+    # Second target state
+    t2_x, t2_y = float(WORLD_SIZE // 2), float(WORLD_SIZE // 2)
+    t2_dx, t2_dy = -t_dx, -t_dy
+    t2_phase = math.pi  # 180 degree phase offset
+
     # Smooth Target Physics State
     t_ax, t_ay = 0.0, 0.0
     frame_count = 0
     t_phase = 0.0
     bounce_x, bounce_y = 1.0, 1.0
+    
+    prev_dual_target = False
 
     # Advanced Path State
     circle_cx, circle_cy = float(WORLD_SIZE // 2), float(WORLD_SIZE // 2)
@@ -160,16 +179,21 @@ def main():
 
         # --- TARGET PHYSICS ENGINE ---
         if transitioning_to_center:
-            # Smoothly fly to the center of the map before starting the mathematical path
-            cx, cy = WORLD_SIZE // 2, WORLD_SIZE // 2
-            dist = math.hypot(cx - t_x, cy - t_y)
+            # Determine the starting coordinate for the chosen path
+            target_cx, target_cy = float(WORLD_SIZE // 2), float(WORLD_SIZE // 2)
+            if TARGET_PATH == "Circular":
+                target_cx += 450.0
+            elif TARGET_PATH == "Spiral":
+                target_cx += 10.0
+                
+            dist = math.hypot(target_cx - t_x, target_cy - t_y)
             if dist <= TARGET_MAX_SPEED:
-                t_x, t_y = float(cx), float(cy)
+                t_x, t_y = target_cx, target_cy
                 transitioning_to_center = False
 
                 # Reset path-specific mathematical states exactly at the center
                 if TARGET_PATH == "Circular":
-                    circle_cx, circle_cy = t_x, t_y
+                    circle_cx, circle_cy = float(WORLD_SIZE // 2), float(WORLD_SIZE // 2)
                     circle_R = 450.0
                     target_circle_R = 450.0
                     t_phase = 0.0
@@ -185,9 +209,9 @@ def main():
                     t_phase = 0.0
                     bounce_x, bounce_y = 1.0, 1.0
             else:
-                # Move towards center at max speed
-                t_dx = ((cx - t_x) / dist) * TARGET_MAX_SPEED
-                t_dy = ((cy - t_y) / dist) * TARGET_MAX_SPEED
+                # Move towards starting coordinate at max speed
+                t_dx = ((target_cx - t_x) / dist) * TARGET_MAX_SPEED
+                t_dy = ((target_cy - t_y) / dist) * TARGET_MAX_SPEED
                 t_x += t_dx
                 t_y += t_dy
 
@@ -316,12 +340,42 @@ def main():
                 t_y, bounce_y = float(WORLD_SIZE - 100), bounce_y * -1
                 t_dy *= -1
 
+        # Handle secondary target physics (offset by 180 degrees)
+        if DUAL_TARGET_ENABLED:
+            if not prev_dual_target:
+                tracker.add_track(WORLD_SIZE // 2, WORLD_SIZE // 2)
+                prev_dual_target = True
+                t2_phase = t_phase + math.pi
+                
+            if TARGET_PATH == "Circular":
+                t2_phase += omega
+                t2_x = circle_cx + math.cos(t2_phase) * circle_R
+                t2_y = circle_cy + math.sin(t2_phase) * circle_R
+            elif TARGET_PATH == "Spiral":
+                t2_phase += omega
+                t2_x = cx + math.cos(t2_phase) * spiral_r
+                t2_y = cy + math.sin(t2_phase) * spiral_r
+            else:
+                # Basic offset for random/sinusoidal
+                t2_x = WORLD_SIZE - t_x
+                t2_y = WORLD_SIZE - t_y
+        else:
+            if prev_dual_target:
+                tracker.remove_track()
+                prev_dual_target = False
+
         true_x, true_y = int(t_x), int(t_y)
 
         # Draw the beacon on the world
         top_left = (true_x - TARGET_SIZE // 2, true_y - TARGET_SIZE // 2)
         bottom_right = (true_x + TARGET_SIZE // 2, true_y + TARGET_SIZE // 2)
         cv2.rectangle(world, top_left, bottom_right, 255, -1)
+
+        if DUAL_TARGET_ENABLED:
+            true2_x, true2_y = int(t2_x), int(t2_y)
+            top_left2 = (true2_x - TARGET_SIZE // 2, true2_y - TARGET_SIZE // 2)
+            bottom_right2 = (true2_x + TARGET_SIZE // 2, true2_y + TARGET_SIZE // 2)
+            cv2.rectangle(world, top_left2, bottom_right2, 255, -1)
 
         # --- 1.5 OBSTACLE (VIRTUAL CLOUD) RENDERING ---
         # Draw obstacles AFTER the beacon, in pure black (0)
@@ -477,7 +531,13 @@ def main():
             rmse_history.pop(0)
 
         # --- UPDATE PERFORMANCE METRICS ---
-        total_error += rmse
+        if not hasattr(tracker, "sum_squared_error"):
+            tracker.sum_squared_error = 0.0
+            tracker.sum_absolute_error = 0.0
+            
+        tracker.sum_squared_error += (error_x**2 + error_y**2)
+        tracker.sum_absolute_error += rmse
+        
         if rmse > max_error:
             max_error = rmse
 
@@ -489,7 +549,9 @@ def main():
         else:
             lost_frames += 1
 
-        avg_error = total_error / frame_count
+        avg_error = tracker.sum_absolute_error / frame_count
+        global_rmse = math.sqrt(tracker.sum_squared_error / frame_count)
+        
         lock_retention_rate = (
             (locked_frames / (locked_frames + lost_frames)) * 100
             if (locked_frames + lost_frames) > 0
@@ -534,10 +596,14 @@ def main():
                 "fps": current_fps,
                 "acquisition_time": acquisition_time,
                 "avg_error": avg_error,
+                "global_rmse": global_rmse,
                 "max_error": max_error,
                 "lock_retention_rate": lock_retention_rate,
             },
         }
+        
+        if DUAL_TARGET_ENABLED:
+            telemetry["target2"] = {"x": int(t2_x), "y": int(t2_y)}
 
         # If Kalman Coasting is active, include the prediction for the UI
         if status_str == "KALMAN COASTING":

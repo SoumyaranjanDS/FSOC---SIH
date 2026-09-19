@@ -12,6 +12,8 @@ function ControlPanel({
   setTargetPath,
   obstaclesEnabled,
   setObstaclesEnabled,
+  dualTargetEnabled,
+  setDualTargetEnabled,
   zoomLevel,
   setZoomLevel,
   noiseType,
@@ -143,6 +145,20 @@ function ControlPanel({
             }
           />{" "}
           Enable Virtual Clouds
+        </label>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={dualTargetEnabled}
+            onChange={(event) =>
+              update(
+                "dual_target",
+                event.target.checked,
+                setDualTargetEnabled,
+              )
+            }
+          />{" "}
+          Enable Dual Targets (Multi-Beacon Tracking)
         </label>
         <label>Target Path Profile</label>
         <select

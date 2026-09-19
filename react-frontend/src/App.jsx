@@ -22,6 +22,7 @@ function App() {
   const [targetSpeed, setTargetSpeed] = useState(15);
   const [targetPath, setTargetPath] = useState("Random");
   const [obstaclesEnabled, setObstaclesEnabled] = useState(false);
+  const [dualTargetEnabled, setDualTargetEnabled] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(0.4);
   const [noiseType, setNoiseType] = useState("None");
   const [noiseStdDev, setNoiseStdDev] = useState(20);
@@ -156,6 +157,7 @@ function App() {
             target_speed: targetSpeed,
             target_path: targetPath,
             obstacles_enabled: obstaclesEnabled,
+            dual_target: dualTargetEnabled,
             noise_type: noiseType,
             noise_std_dev: noiseStdDev,
             camera_jitter: cameraJitter,
@@ -191,6 +193,8 @@ function App() {
             setTargetPath={setTargetPath}
             obstaclesEnabled={obstaclesEnabled}
             setObstaclesEnabled={setObstaclesEnabled}
+            dualTargetEnabled={dualTargetEnabled}
+            setDualTargetEnabled={setDualTargetEnabled}
             zoomLevel={zoomLevel}
             setZoomLevel={setZoomLevel}
             noiseType={noiseType}

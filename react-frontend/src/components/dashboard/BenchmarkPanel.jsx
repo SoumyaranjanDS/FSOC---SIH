@@ -100,34 +100,80 @@ function BenchmarkPanel({
         </button>
       </div>
 
-      {/* Status */}
-      <div className="status-list">
-        <div>
-          Mode <strong className="muted">VIDEO BENCHMARK</strong>
+      {/* Telemetry Dashboard */}
+      <div className="status-list telemetry-dashboard">
+        <div className="section-label" style={{ marginBottom: "8px", borderBottom: "1px solid #333", paddingBottom: "4px" }}>
+          FSOC TRACKING TELEMETRY
         </div>
-        <div>
-          Engine{" "}
-          <strong className={isRunning ? "status-good" : isLoading ? "status-warn" : "status-bad"}>
-            {isRunning ? "RUNNING" : isLoading ? "LOADING…" : "STOPPED"}
-          </strong>
-        </div>
-        <div>
-          Total Frames <strong>{telemetry?.total_frames || "—"}</strong>
-        </div>
-        <div>
-          Tracking{" "}
-          <strong
-            className={
-              telemetry?.status === "TRACKING"
-                ? "status-good"
-                : telemetry?.status
-                  ? "status-warn"
-                  : "muted"
-            }
-          >
-            {telemetry?.status || "WAITING"}
-          </strong>
-        </div>
+        
+        {telemetry?.performance ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">FPS</span>
+              <span>
+                <strong>{telemetry.performance.fps}</strong>
+                <span className={telemetry.performance.fps >= 20 ? "status-good" : "status-bad"} style={{ marginLeft: "8px", fontSize: "0.85em" }}>
+                   (≥20) {telemetry.performance.fps >= 20 ? "✓" : "✗"}
+                </span>
+              </span>
+            </div>
+            
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">Avg Error</span>
+              <span><strong>{telemetry.performance.avg_error}</strong> px</span>
+            </div>
+            
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">RMSE</span>
+              <span>
+                <strong>{telemetry.performance.global_rmse || 0}</strong> px
+                <span className={(telemetry.performance.global_rmse || 0) <= 10 ? "status-good" : "status-bad"} style={{ marginLeft: "8px", fontSize: "0.85em" }}>
+                   (≤10) {(telemetry.performance.global_rmse || 0) <= 10 ? "✓" : "✗"}
+                </span>
+              </span>
+            </div>
+            
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">Max Error</span>
+              <span><strong>{telemetry.performance.max_error}</strong> px</span>
+            </div>
+            
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">Target Loss</span>
+              <span>
+                <strong>{(100 - telemetry.performance.lock_retention_rate).toFixed(1)}</strong> %
+                <span className={(100 - telemetry.performance.lock_retention_rate) < 5 ? "status-good" : "status-bad"} style={{ marginLeft: "8px", fontSize: "0.85em" }}>
+                   (&lt;5%) {(100 - telemetry.performance.lock_retention_rate) < 5 ? "✓" : "✗"}
+                </span>
+              </span>
+            </div>
+            
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">Acquisition</span>
+              <span><strong>{telemetry.performance.acquisition_time || "—"}</strong> s</span>
+            </div>
+            
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span className="muted">Re-Acquisition</span>
+              <span><strong>{telemetry.performance.avg_reacq_time || "—"}</strong> s</span>
+            </div>
+            
+            <div style={{ marginTop: "12px", paddingTop: "8px", borderTop: "1px solid #333", display: "flex", justifyContent: "space-between" }}>
+               <span>Tracking State:</span>
+               <strong className={telemetry?.status === "TRACKING" ? "status-good" : "status-warn"}>{telemetry?.status}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Engine Status:</span>
+              <strong className={isRunning ? "status-good" : isLoading ? "status-warn" : "status-bad"}>
+                {isRunning ? "RUNNING" : isLoading ? "LOADING…" : "STOPPED"}
+              </strong>
+            </div>
+            <div className="muted" style={{ marginTop: "8px" }}>Waiting for telemetry...</div>
+          </>
+        )}
       </div>
 
       {/* Disturbances & Zoom */}
